@@ -1,0 +1,1147 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Craylife{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+
+    <div class="panel welcome-panel glow text-center">
+        <h1><i class="fa-solid fa-house"></i> Craylife Dashboard</h1>
+        <p>Monitor your crayfish operations, track key metrics, and access important tools all in one place.</p>
+    </div>
+
+    <div class="panel sensor-panel glow">
+        <h2><i class="fa-solid fa-thermometer-half"></i> Water Quality Monitoring</h2>
+
+        <p id="last-updated" style="margin-top:6px; opacity:.85;">
+            Last updated: <span id="last-updated-seconds">—</span>
+            <span id="live-indicator" style="margin-left:10px; font-weight:600;">●</span>
+        </p>
+
+        <div class="sensor-cards sensor-cards-pretty">
+            <div class="sensor-card sensor-card-pretty ph-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-vial"></i> pH Level</div>
+                    <div class="mini-chip">Live</div>
+                </div>
+                <div class="sensor-value big-value" id="phValue">—</div>
+                <div class="sensor-sub strong-sub" id="phStatus">Unknown</div>
+                <div class="individual-sensor-status" id="phSensorConnection">
+                    ● Checking...
+                </div>
+                <div class="sensor-badge" id="phBadge" style="display:none;"></div>
+            </div>
+
+            <div class="sensor-card sensor-card-pretty quality-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-water"></i> Water Quality</div>
+                    <div class="mini-chip">Turbidity</div>
+                </div>
+                <div class="sensor-value big-value" id="waterQualityValue">—</div>
+                <div class="sensor-sub strong-sub">Water clarity status</div>
+                <div class="individual-sensor-status" id="turbiditySensorConnection">
+                    ● Checking...
+                </div>
+            </div>
+
+            <div class="sensor-card sensor-card-pretty status-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-link"></i> Status</div>
+                    <div class="mini-chip">Board</div>
+                </div>
+                <div class="sensor-value big-value" id="sensorStatus">Not connected</div>
+                <div class="sensor-sub strong-sub">Arduino connection state</div>
+            </div>
+        </div>
+
+        <div class="alert-panel" id="alertPanel" style="
+  margin-top:15px;
+  padding:14px;
+  border-radius:12px;
+  background: rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.15);
+">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong>System Alert</strong>
+                <span id="alertLevel" style="font-weight:800;">NORMAL</span>
+            </div>
+
+            <div id="alertMessage" style="margin-top:6px;">
+                Water conditions are stable.
+            </div>
+
+            <div id="alertRecommendation" style="margin-top:4px; font-size:13px; opacity:.85;">
+                No action needed.
+            </div>
+        </div>
+
+        <div class="ph-chart-wrap">
+            <canvas id="phMiniChart" height="120"></canvas>
+        </div>
+
+        <div class="sensor-actions pretty-actions">
+            <button class="action-btn action-btn-primary" id="exportCsvBtn">
+                <i class="fa-solid fa-file-csv"></i>
+                <span>Export pH CSV</span>
+            </button>
+
+            <button class="action-btn action-btn-secondary" id="exportAllCsvBtn">
+                <i class="fa-solid fa-download"></i>
+                <span>Export All Sensors</span>
+            </button>
+
+            <button class="action-btn action-btn-danger" id="clearCsvBtn">
+                <i class="fa-solid fa-trash"></i>
+                <span>Clear Chart Data</span>
+            </button>
+
+            <label class="sound-toggle sound-toggle-pretty">
+                <input type="checkbox" id="phSoundToggle">
+                <span><i class="fa-solid fa-volume-high"></i> Alert Sound</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="panel sensor-panel glow" style="margin-top:20px;">
+        <h2><i class="fa-solid fa-water"></i> Water Level Monitoring</h2>
+
+        <div class="sensor-cards sensor-cards-pretty">
+            <div class="sensor-card sensor-card-pretty level-card" data-sensor="Water Level">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-water"></i> Water Level</div>
+                    <div class="mini-chip">Tank</div>
+                </div>
+                <div class="sensor-value big-value" id="waterLevelValue">—</div>
+                <div class="sensor-sub strong-sub" id="waterLevelStatus">Unknown</div>
+                <div class="individual-sensor-status" id="waterLevelSensorConnection">
+                    ● Checking...
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="panel sensor-panel glow growth-monitoring-panel" style="margin-top:20px;">
+        <div class="growth-monitoring-heading">
+            <div>
+                <h2><i class="fa-solid fa-chart-line"></i> Growth Monitoring</h2>
+                <p>Latest saved growth classification and recent growth-stage history.</p>
+            </div>
+
+            <a href="{{ url_for('classify') }}" class="btn btn-primary">
+                <i class="fa-solid fa-camera"></i> New Classification
+            </a>
+        </div>
+
+        {% if latest_growth %}
+        <div class="sensor-cards sensor-cards-pretty growth-summary-grid">
+            <div class="sensor-card sensor-card-pretty growth-stage-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-seedling"></i> Current Growth Stage</div>
+                    <div class="mini-chip">Latest</div>
+                </div>
+                <div class="sensor-value big-value">
+                    {{ latest_growth.growth.replace('_', ' ').title() }}
+                </div>
+                <div class="sensor-sub strong-sub">Most recent model classification</div>
+            </div>
+
+            <div class="sensor-card sensor-card-pretty growth-confidence-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-gauge-high"></i> Growth Confidence</div>
+                    <div class="mini-chip">Model</div>
+                </div>
+                <div class="sensor-value big-value">
+                    {{ '%.2f'|format(latest_growth.growth_confidence or 0) }}%
+                </div>
+                <div class="sensor-sub strong-sub">Prediction confidence</div>
+            </div>
+
+            <div class="sensor-card sensor-card-pretty growth-date-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-clock"></i> Last Checked</div>
+                    <div class="mini-chip">Saved</div>
+                </div>
+                <div class="sensor-value growth-date-value">
+                    {{ latest_growth.created_at.strftime('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
+                </div>
+                <div class="sensor-sub strong-sub">
+                    {{ latest_growth.created_at.strftime('%I:%M %p') if latest_growth.created_at else '' }}
+                </div>
+            </div>
+        </div>
+
+        <div class="growth-chart-wrap">
+            <canvas id="growthStageChart" height="115"></canvas>
+        </div>
+
+        <script id="growthChartLabelsData" type="application/json">{{ growth_chart_labels|tojson }}</script>
+        <script id="growthChartValuesData" type="application/json">{{ growth_chart_values|tojson }}</script>
+
+        <div class="growth-history-wrap">
+            <h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Growth Updates</h3>
+            <div class="growth-history-list">
+                {% for log in growth_logs[:5] %}
+                <div class="growth-history-item">
+                    <div>
+                        <strong>{{ log.growth.replace('_', ' ').title() }}</strong>
+                        <span>{{ '%.2f'|format(log.growth_confidence or 0) }}% confidence</span>
+                    </div>
+                    <time>
+                        {{ log.created_at.strftime('%b %d, %Y %I:%M %p') if log.created_at else 'Unknown' }}
+                    </time>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="growth-empty-state">
+            <i class="fa-solid fa-fish"></i>
+            <div>
+                <h3>No growth record yet</h3>
+                <p>Classify a crayfish image to display its growth stage and monitoring history here.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="panel quick-actions-panel glow">
+        <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
+
+        <div class="dashboard-cards quick-actions-grid">
+            <a href="{{ url_for('activity') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-purple">
+                    <i class="fa-solid fa-tasks fa-2x card-icon"></i>
+                    <h3>Activities</h3>
+                </div>
+            </a>
+
+            <a href="{{ url_for('create_batch') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-blue">
+                    <i class="fa-solid fa-plus-square fa-2x card-icon"></i>
+                    <h3>New Batch</h3>
+                </div>
+            </a>
+
+            <a href="{{ url_for('classify') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-cyan">
+                    <i class="fa-solid fa-fish fa-2x card-icon"></i>
+                    <h3>Classify</h3>
+                </div>
+            </a>
+
+            <a href="{{ url_for('inventory') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-green">
+                    <i class="fa-solid fa-boxes-stacked fa-2x card-icon"></i>
+                    <h3>Records</h3>
+                </div>
+            </a>
+
+            <a href="{{ url_for('reports') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-orange">
+                    <i class="fa-solid fa-chart-line fa-2x card-icon"></i>
+                    <h3>Reports</h3>
+                </div>
+            </a>
+
+            <a href="{{ url_for('settings') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-pink">
+                    <i class="fa-solid fa-cogs fa-2x card-icon"></i>
+                    <h3>Settings</h3>
+                </div>
+            </a>
+        </div>
+    </div>
+
+</div>
+
+<div id="toast" style="
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.75);
+  color: #fff;
+  font-weight: 600;
+  max-width: 320px;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none;
+"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+
+<script>
+  let socket = null;
+
+  if (typeof io !== "undefined") {
+    try {
+      socket = io();
+    } catch (e) {
+      console.error("Socket.IO init failed:", e);
+      socket = null;
+    }
+  } else {
+    console.error("Socket.IO client failed to load");
+  }
+
+  let phChart = null;
+  const phLabels = [];
+  const phValues = [];
+  const PH_MAX_POINTS = 5;
+
+  const exportBtn = document.getElementById("exportCsvBtn");
+  const clearBtn = document.getElementById("clearCsvBtn");
+  const exportAllBtn = document.getElementById("exportAllCsvBtn");
+
+  const soundToggle = document.getElementById("phSoundToggle");
+  let soundEnabled = localStorage.getItem("phSoundEnabled");
+  soundEnabled = soundEnabled === null ? true : (soundEnabled === "true");
+  if (soundToggle) soundToggle.checked = soundEnabled;
+
+  if (soundToggle) {
+    soundToggle.addEventListener("change", () => {
+      soundEnabled = soundToggle.checked;
+      localStorage.setItem("phSoundEnabled", soundEnabled);
+    });
+  }
+
+  const PH_MIN = 6.5;
+  const PH_MAX = 8.5;
+
+  let lastWarnPH = null;
+  let lastBeepAt = 0;
+  let phWasOutOfRange = false;
+
+  let lastUpdateTime = null;
+  const lastUpdatedEl = document.getElementById("last-updated-seconds");
+  const liveIndicatorEl = document.getElementById("live-indicator");
+  const STALE_SECONDS = 15;
+
+  function updateLastUpdatedUI() {
+    if (!lastUpdatedEl || !liveIndicatorEl) return;
+
+    if (!lastUpdateTime) {
+      lastUpdatedEl.textContent = "—";
+      liveIndicatorEl.textContent = "●";
+      liveIndicatorEl.style.opacity = 0.5;
+      liveIndicatorEl.style.filter = "grayscale(1)";
+      return;
+    }
+
+    const secs = Math.floor((Date.now() - lastUpdateTime) / 1000);
+    lastUpdatedEl.textContent = `${secs}s ago`;
+
+    if (secs >= STALE_SECONDS) {
+      liveIndicatorEl.textContent = "● Disconnected";
+      liveIndicatorEl.style.opacity = 1;
+      liveIndicatorEl.style.filter = "grayscale(1)";
+    } else {
+      liveIndicatorEl.textContent = "● Live";
+      liveIndicatorEl.style.opacity = 1;
+      liveIndicatorEl.style.filter = "none";
+    }
+  }
+
+  setInterval(updateLastUpdatedUI, 1000);
+  updateLastUpdatedUI();
+
+  let toastTimer = null;
+  function showToast(html) {
+    const toast = document.getElementById("toast");
+    if (!toast) return;
+
+    toast.innerHTML = html;
+    toast.style.opacity = 1;
+    toast.style.transform = "translateY(0)";
+
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toast.style.opacity = 0;
+      toast.style.transform = "translateY(10px)";
+    }, 3200);
+  }
+
+  let audioCtx = null;
+
+  function ensureAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+
+  window.addEventListener("click", ensureAudio, { once: true });
+  window.addEventListener("touchstart", ensureAudio, { once: true });
+
+  function beep() {
+    if (!soundEnabled) return;
+
+    try {
+      const ctx = ensureAudio();
+      if (!ctx) return;
+
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+
+      o.type = "sine";
+      o.frequency.value = 880;
+      g.gain.value = 0.08;
+
+      o.connect(g);
+      g.connect(ctx.destination);
+
+      o.start();
+      setTimeout(() => {
+        o.stop();
+      }, 180);
+    } catch (e) {}
+  }
+
+  function initMiniChart() {
+    const canvas = document.getElementById("phMiniChart");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    phChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: phLabels,
+        datasets: [{
+          label: "pH",
+          data: phValues,
+          fill: false,
+          tension: 0.25
+        }]
+      },
+      options: {
+        animation: true,
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { x: { display: false }, y: { beginAtZero: false } }
+      }
+    });
+  }
+
+  function pushMiniChart(phNum) {
+    const ts = new Date();
+    const label = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    phLabels.push(label);
+    phValues.push(phNum);
+
+    while (phLabels.length > PH_MAX_POINTS) phLabels.shift();
+    while (phValues.length > PH_MAX_POINTS) phValues.shift();
+
+    if (phChart) phChart.update();
+  }
+
+  function parsePH(v) {
+    if (v === undefined || v === null) return null;
+    const s = String(v).replace(/[^\d.]/g, "");
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function updateSensorConnection(element, status) {
+    if (!element) return;
+
+    const normalized = String(status || "Disconnected")
+      .trim()
+      .toLowerCase();
+    const connected = normalized === "connected";
+
+    element.textContent = connected
+      ? "● Connected"
+      : "● Disconnected";
+
+    element.classList.toggle("sensor-connected", connected);
+    element.classList.toggle("sensor-disconnected", !connected);
+  }
+
+  function applySensorData(data) {
+    const status = data["Status"] || "Not connected";
+    const boardConnected = String(status)
+      .trim()
+      .toLowerCase() === "connected";
+
+    if (boardConnected) {
+      lastUpdateTime = Date.now();
+    } else {
+      lastUpdateTime = null;
+    }
+    updateLastUpdatedUI();
+
+    const phEl = document.getElementById("phValue");
+    const phStatusEl = document.getElementById("phStatus");
+    const statusEl = document.getElementById("sensorStatus");
+    const card = phEl ? phEl.closest(".sensor-card") : null;
+
+    const phConnectionEl = document.getElementById("phSensorConnection");
+    const waterConnectionEl = document.getElementById("waterLevelSensorConnection");
+    const turbidityConnectionEl = document.getElementById("turbiditySensorConnection");
+
+    const rawPh = data["pH Level"];
+    const phStatus = data["pH Status"] || "Unknown";
+    const phSensorStatus = data["pH Sensor Status"] || "Disconnected";
+    const waterSensorStatus = data["Water Level Sensor Status"] || "Disconnected";
+    const turbiditySensorStatus = data["Turbidity Sensor Status"] || "Disconnected";
+
+    updateSensorConnection(phConnectionEl, phSensorStatus);
+    updateSensorConnection(waterConnectionEl, waterSensorStatus);
+    updateSensorConnection(turbidityConnectionEl, turbiditySensorStatus);
+
+    if (phEl) {
+      phEl.textContent = String(phSensorStatus).toLowerCase() === "connected"
+        ? (rawPh ?? "—")
+        : "—";
+    }
+
+    if (phStatusEl) {
+      phStatusEl.textContent = String(phSensorStatus).toLowerCase() === "connected"
+        ? phStatus
+        : "Disconnected";
+    }
+
+    if (statusEl) {
+      statusEl.textContent = boardConnected ? "Connected" : "Disconnected";
+      statusEl.style.fontWeight = "800";
+    }
+
+    const wlEl = document.getElementById("waterLevelValue");
+    const wlsEl = document.getElementById("waterLevelStatus");
+    const waterQualityEl = document.getElementById("waterQualityValue");
+
+    if (wlEl) {
+      wlEl.textContent = String(waterSensorStatus).toLowerCase() === "connected"
+        ? (data["Water Level"] ?? "—")
+        : "—";
+    }
+
+    if (wlsEl) {
+      wlsEl.textContent = String(waterSensorStatus).toLowerCase() === "connected"
+        ? (data["Water Status"] || "Unknown")
+        : "Disconnected";
+    }
+
+    if (waterQualityEl) {
+      waterQualityEl.textContent = String(turbiditySensorStatus).toLowerCase() === "connected"
+        ? String(data["Water Quality"] || "—").toUpperCase()
+        : "—";
+    }
+
+    const alertLevelEl = document.getElementById("alertLevel");
+    const alertMsgEl = document.getElementById("alertMessage");
+    const alertRecEl = document.getElementById("alertRecommendation");
+    const alertPanel = document.getElementById("alertPanel");
+
+    if (alertLevelEl && data["Alert Level"]) {
+      alertLevelEl.textContent = data["Alert Level"];
+    }
+
+    if (alertMsgEl && data["Alert Message"]) {
+      alertMsgEl.textContent = data["Alert Message"];
+    }
+
+    if (alertRecEl && data["Recommendation"]) {
+      alertRecEl.textContent = data["Recommendation"];
+    }
+
+    if (alertPanel) {
+      const level = (data["Alert Level"] || "").toUpperCase();
+
+      if (level === "CRITICAL") {
+        alertPanel.style.border = "1px solid #ff4d4d";
+        alertPanel.style.background = "rgba(255,77,77,0.15)";
+      } else if (level === "WARNING") {
+        alertPanel.style.border = "1px solid #ffaa00";
+        alertPanel.style.background = "rgba(255,170,0,0.15)";
+      } else {
+        alertPanel.style.border = "1px solid rgba(255,255,255,0.15)";
+        alertPanel.style.background = "rgba(255,255,255,0.08)";
+      }
+    }
+
+    const phNum = parsePH(rawPh);
+    const isNum = (phNum !== null);
+
+    if (isNum) {
+      pushMiniChart(phNum);
+
+      const isWarn = (phNum < PH_MIN) || (phNum > PH_MAX);
+
+      if (isWarn) {
+        const now = Date.now();
+        if (now - lastBeepAt > 4500) {
+          showToast(`
+            <i class="fa-solid fa-triangle-exclamation" style="margin-right:8px;"></i>
+            <span>pH OUT OF RANGE: <b>${phNum}</b> (safe: ${PH_MIN}-${PH_MAX})</span>
+          `);
+          beep();
+          lastBeepAt = now;
+        }
+
+        lastWarnPH = phNum;
+        phWasOutOfRange = true;
+      } else {
+        if (phWasOutOfRange) {
+          lastWarnPH = null;
+          phWasOutOfRange = false;
+        }
+      }
+
+      if (card) card.classList.toggle("warn", isWarn);
+
+      const badge = document.getElementById("phBadge");
+      if (badge) {
+        if (isWarn) {
+          badge.style.display = "inline-block";
+          badge.textContent = "OUT OF RANGE";
+        } else {
+          badge.style.display = "none";
+          badge.textContent = "";
+        }
+      }
+    } else {
+      if (card) card.classList.remove("warn");
+      const badge = document.getElementById("phBadge");
+      if (badge) {
+        badge.style.display = "none";
+        badge.textContent = "";
+      }
+    }
+  }
+
+  if (socket) {
+    socket.on("sensor_update", applySensorData);
+  }
+
+  fetch("/arduino-data", { cache: "no-store" })
+    .then(r => r.json())
+    .then(d => applySensorData(d || {}))
+    .catch(err => console.error("Fetch failed:", err));
+
+  setInterval(() => {
+    fetch("/arduino-data", { cache: "no-store" })
+      .then(r => r.json())
+      .then(d => applySensorData(d || {}))
+      .catch(err => console.error("Fetch failed:", err));
+  }, 5000);
+
+  if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+      const csv = "timestamp,ph\n" + phLabels.map((t, i) => `${t},${phValues[i]}`).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ph_readings.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      phLabels.length = 0;
+      phValues.length = 0;
+      if (phChart) phChart.update();
+      showToast(`<i class="fa-solid fa-broom" style="margin-right:8px;"></i> <span>CSV data cleared.</span>`);
+    });
+  }
+
+  function exportAllSensorsCSV() {
+    const stampISO = new Date().toISOString();
+    const secsAgo = (lastUpdateTime ? Math.floor((Date.now() - lastUpdateTime) / 1000) : "");
+
+    const currentPH = document.getElementById("phValue")?.textContent ?? "";
+    const currentPHStatus = document.getElementById("phStatus")?.textContent ?? "";
+    const currentStatus = document.getElementById("sensorStatus")?.textContent ?? "";
+    const currentWL = document.getElementById("waterLevelValue")?.textContent ?? "";
+    const currentWLStatus = document.getElementById("waterLevelStatus")?.textContent ?? "";
+    const currentWaterQuality = document.getElementById("waterQualityValue")?.textContent ?? "";
+
+    let csv = "";
+    csv += "timestamp_iso,last_updated_seconds_ago,arduino_status,ph_level,ph_status,water_level,water_level_status,water_quality\n";
+    csv += [
+      stampISO,
+      secsAgo,
+      String(currentStatus).replace(/,/g, " "),
+      String(currentPH).replace(/,/g, " "),
+      String(currentPHStatus).replace(/,/g, " "),
+      String(currentWL).replace(/,/g, " "),
+      String(currentWLStatus).replace(/,/g, " "),
+      String(currentWaterQuality).replace(/,/g, " ")
+    ].join(",") + "\n\n";
+
+    csv += "ph_time,ph\n";
+    for (let i = 0; i < phValues.length; i++) {
+      const t = String(phLabels[i] ?? "").replace(/,/g, " ");
+      const v = phValues[i];
+      csv += `${t},${v}\n`;
+    }
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    const stampFile = stampISO.replaceAll(":", "-").slice(0, 19);
+    a.download = `craylife_all_sensors_${stampFile}.csv`;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    showToast(`
+      <i class="fa-solid fa-check" style="margin-right:8px;"></i>
+      <span>Exported All Sensors CSV</span>
+    `);
+  }
+
+  if (exportAllBtn) exportAllBtn.addEventListener("click", exportAllSensorsCSV);
+
+
+  function initGrowthChart() {
+    const canvas = document.getElementById("growthStageChart");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    const labelsElement = document.getElementById("growthChartLabelsData");
+    const valuesElement = document.getElementById("growthChartValuesData");
+
+    if (!labelsElement || !valuesElement) return;
+
+    let labels = [];
+    let values = [];
+
+    try {
+      labels = JSON.parse(labelsElement.textContent || "[]");
+      values = JSON.parse(valuesElement.textContent || "[]");
+    } catch (error) {
+      console.error("Growth chart data is invalid:", error);
+      return;
+    }
+
+    if (!labels.length || !values.length) return;
+
+    const stageNames = {
+      1: "Mid Juvenile",
+      2: "Juvenile",
+      3: "Mid Adult",
+      4: "Adult"
+    };
+
+    new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Growth Stage",
+          data: values,
+          fill: false,
+          tension: 0.25,
+          pointRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return stageNames[context.raw] || "Unknown";
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            min: 1,
+            max: 4,
+            ticks: {
+              stepSize: 1,
+              callback: function(value) {
+                return stageNames[value] || "";
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  initMiniChart();
+  initGrowthChart();
+</script>
+
+<style>
+  .ph-chart-wrap {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.06);
+  }
+
+  .sensor-card.warn {
+    box-shadow: 0 0 0 2px rgba(255, 85, 85, 0.65), 0 0 18px rgba(255, 85, 85, 0.35);
+  }
+
+  .sensor-badge {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.9;
+  }
+
+  .sound-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    margin-left: 12px;
+  }
+
+  .sensor-cards-pretty {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .sensor-card-pretty {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 18px 16px;
+    border-radius: 18px;
+    background: linear-gradient(145deg, rgba(255,255,255,0.11), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+    backdrop-filter: blur(8px);
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+
+  .sensor-card-pretty:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 28px rgba(0,0,0,0.22);
+  }
+
+  .sensor-card-pretty::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    border-radius: 18px 0 0 18px;
+    opacity: 0.95;
+  }
+
+  .ph-card::before {
+    background: linear-gradient(to bottom, #ff7eb3, #ff4d6d);
+  }
+
+  .quality-card::before {
+    background: linear-gradient(to bottom, #586a7a, #00c6ff);
+  }
+
+  .status-card::before {
+    background: linear-gradient(to bottom, #625b45, #fda085);
+  }
+
+  .level-card::before {
+    background: linear-gradient(to bottom, #60a5fa, #2563eb);
+  }
+
+  .sensor-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .sensor-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    opacity: 0.95;
+  }
+
+  .big-value {
+    font-size: 2rem;
+    color: rgb(44, 68, 68);
+    font-weight: 800;
+    line-height: 1.1;
+    margin-top: 8px;
+    margin-bottom: 6px;
+    letter-spacing: 0.4px;
+  }
+
+  .strong-sub {
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.88;
+  }
+
+  .mini-chip {
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.10);
+    white-space: nowrap;
+  }
+
+  .sensor-card-pretty .sensor-badge {
+    margin-top: 10px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 85, 85, 0.14);
+    border: 1px solid rgba(255, 85, 85, 0.28);
+    color: #383838;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+  }
+
+  .status-card .big-value,
+  .quality-card .big-value {
+    text-transform: uppercase;
+  }
+
+  .pretty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 18px;
+    padding-top: 8px;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+    border-radius: 14px;
+    padding: 11px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+  }
+
+  .action-btn i {
+    font-size: 14px;
+  }
+
+  .action-btn:hover {
+    transform: translateY(-2px);
+    opacity: 0.96;
+  }
+
+  .action-btn-primary {
+    background: linear-gradient(135deg, #293240, #7c88a2);
+  }
+
+  .action-btn-secondary {
+    background: linear-gradient(135deg, #4a5b55, #059669);
+  }
+
+  .action-btn-danger {
+    background: linear-gradient(135deg, #775252, #5d4040);
+  }
+
+  .sound-toggle-pretty {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 4px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.10);
+    font-weight: 700;
+    min-height: 44px;
+  }
+
+  .sound-toggle-pretty input[type="checkbox"] {
+    transform: scale(1.1);
+    accent-color: #60a5fa;
+  }
+
+  .quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 12px;
+  }
+
+  .quick-card {
+    height: 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.10);
+    transition: transform .2s ease, box-shadow .2s ease;
+    text-align: center;
+  }
+
+  .quick-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.2);
+  }
+
+  .quick-card h3 {
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .card-icon {
+    opacity: 0.9;
+  }
+
+  @media (max-width: 768px) {
+    .quick-actions-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .growth-monitoring-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .growth-monitoring-heading p {
+    margin: 4px 0 0;
+  }
+
+  .growth-summary-grid {
+    margin-top: 15px;
+  }
+
+  .growth-stage-card::before {
+    background: linear-gradient(to bottom, #34d399, #059669);
+  }
+
+  .growth-confidence-card::before {
+    background: linear-gradient(to bottom, #60a5fa, #2563eb);
+  }
+
+  .growth-date-card::before {
+    background: linear-gradient(to bottom, #fbbf24, #d97706);
+  }
+
+  .growth-chart-wrap {
+    margin-top: 18px;
+    padding: 15px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .growth-history-wrap {
+    margin-top: 18px;
+  }
+
+  .growth-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .growth-history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .growth-history-item div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .growth-history-item span,
+  .growth-history-item time {
+    font-size: 13px;
+    opacity: 0.8;
+  }
+
+  .growth-date-value {
+    font-size: 1.35rem;
+    font-weight: 800;
+    margin-top: 8px;
+  }
+
+  .growth-empty-state {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 15px;
+    padding: 20px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .growth-empty-state > i {
+    font-size: 32px;
+  }
+
+  .growth-empty-state h3,
+  .growth-empty-state p {
+    margin: 0;
+  }
+
+  @media (max-width: 700px) {
+    .growth-history-item {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  .individual-sensor-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .sensor-connected {
+    color: #157347;
+    background: rgba(25, 135, 84, 0.13);
+    border: 1px solid rgba(25, 135, 84, 0.25);
+  }
+
+  .sensor-disconnected {
+    color: #b02a37;
+    background: rgba(220, 53, 69, 0.13);
+    border: 1px solid rgba(220, 53, 69, 0.25);
+  }
+
+</style>
+
+{% endblock %}

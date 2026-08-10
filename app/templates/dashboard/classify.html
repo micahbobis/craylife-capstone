@@ -1,0 +1,702 @@
+{% extends "base.html" %}
+
+{% block title %}Crayfish Classifier - Craylife{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+
+    <!-- PAGE HEADER -->
+    <div class="panel glow">
+        <h2>
+            <i class="fa-solid fa-magnifying-glass-chart"></i>
+            Crayfish Classification
+        </h2>
+
+        <p>
+            Upload a crayfish image to predict its gender and growth
+            classification using the trained ResNet-50 models.
+        </p>
+    </div>
+
+    <!-- UPLOAD FORM -->
+    <div class="panel form-panel">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div
+                        class="text-{{ 'danger' if category == 'danger' else category }}"
+                        style="margin-bottom: 12px;"
+                    >
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">
+                    <i class="fa-solid fa-file-image"></i>
+                    Upload Crayfish Image
+                </label>
+
+                <input
+                    type="file"
+                    name="file"
+                    id="file"
+                    class="form-control"
+                    accept=".jpg,.jpeg,.png"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                    onclick="
+                        this.innerHTML =
+                        '<i class=&quot;fa-solid fa-spinner fa-spin&quot;></i> Processing...';
+                        this.disabled = true;
+                        this.form.submit();
+                    "
+                >
+                    <i class="fa-solid fa-upload"></i>
+                    Upload and Classify
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {% if uploaded_file_url or result %}
+
+    <div class="classification-layout">
+
+        <!-- UPLOADED IMAGE -->
+        {% if uploaded_file_url %}
+        <div class="panel classification-image-panel">
+            <h4>
+                <i class="fa-solid fa-image"></i>
+                Uploaded Image
+            </h4>
+
+            <div class="uploaded-image-wrapper">
+                <img
+                    src="{{ uploaded_file_url }}"
+                    alt="Uploaded crayfish image"
+                >
+            </div>
+
+            <p class="classification-note">
+                Image processed by the trained ResNet-50 models
+            </p>
+        </div>
+        {% endif %}
+
+        {% if result %}
+
+        {#
+            gender_raw_value is the binary model output:
+
+            closer to 1 = Male
+            closer to 0 = Female
+        #}
+
+        {% set male_percentage = result.gender_raw_value * 100 %}
+        {% set female_percentage = 100 - male_percentage %}
+
+        <div class="classification-results">
+
+            <!-- GENDER RESULT -->
+            <div class="panel result-card">
+
+                <div class="result-card-title">
+                    <i class="fa-solid fa-venus-mars"></i>
+                    <h4>Gender Classification</h4>
+                </div>
+
+                <h2 class="main-result">
+                    {% if result.gender == "Male" %}
+                        <i
+                            class="fa-solid fa-mars"
+                            style="color: #4da3ff;"
+                        ></i>
+                    {% else %}
+                        <i
+                            class="fa-solid fa-venus"
+                            style="color: #ff6fa8;"
+                        ></i>
+                    {% endif %}
+
+                    {{ result.gender }}
+                </h2>
+
+                <p class="main-confidence">
+                    Prediction confidence:
+                    <strong>
+                        {{ "%.2f"|format(result.gender_confidence) }}%
+                    </strong>
+                </p>
+
+                <!-- MALE VS FEMALE SCALE -->
+                <div class="gender-scale">
+
+                    <div class="gender-scale-row">
+                        <div class="gender-scale-label">
+                            <span>
+                                <i class="fa-solid fa-mars"></i>
+                                Male
+                            </span>
+
+                            <strong>
+                                {{ "%.2f"|format(male_percentage) }}%
+                            </strong>
+                        </div>
+
+                        <progress
+                            class="gender-progress male-progress"
+                            value="{{ male_percentage|float }}"
+                            max="100"
+                        >{{ male_percentage|float }}%</progress>
+                    </div>
+
+                    <div class="gender-scale-row">
+                        <div class="gender-scale-label">
+                            <span>
+                                <i class="fa-solid fa-venus"></i>
+                                Female
+                            </span>
+
+                            <strong>
+                                {{ "%.2f"|format(female_percentage) }}%
+                            </strong>
+                        </div>
+
+                        <progress
+                            class="gender-progress female-progress"
+                            value="{{ female_percentage|float }}"
+                            max="100"
+                        >{{ female_percentage|float }}%</progress>
+                    </div>
+
+                </div>
+
+                <div class="confidence-status">
+                    {% if result.gender_confidence >= 80 %}
+                        <span class="confidence-high">
+                            <i class="fa-solid fa-circle-check"></i>
+                            High Confidence
+                        </span>
+
+                    {% elif result.gender_confidence >= 60 %}
+                        <span class="confidence-moderate">
+                            <i class="fa-solid fa-circle-exclamation"></i>
+                            Moderate Confidence
+                        </span>
+
+                    {% else %}
+                        <span class="confidence-low">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            Low Confidence
+                        </span>
+                    {% endif %}
+                </div>
+
+                <p class="classification-note">
+                    The two gender percentages total 100%.
+                    The higher percentage determines the displayed result.
+                </p>
+            </div>
+
+            <!-- GROWTH RESULT -->
+            <div class="panel result-card">
+
+                <div class="result-card-title">
+                    <i class="fa-solid fa-chart-column"></i>
+                    <h4>Growth Classification</h4>
+                </div>
+
+                <h2 class="main-result">
+                    {{ result.growth.replace('_', ' ').title() }}
+                </h2>
+
+                <p class="main-confidence">
+                    Prediction confidence:
+                    <strong>
+                        {{ "%.2f"|format(result.growth_confidence) }}%
+                    </strong>
+                </p>
+
+                <progress
+                    class="growth-progress"
+                    value="{{ result.growth_confidence|float }}"
+                    max="100"
+                >{{ result.growth_confidence|float }}%</progress>
+
+                <div class="confidence-status">
+                    {% if result.growth_confidence >= 80 %}
+                        <span class="confidence-high">
+                            <i class="fa-solid fa-circle-check"></i>
+                            High Confidence
+                        </span>
+
+                    {% elif result.growth_confidence >= 60 %}
+                        <span class="confidence-moderate">
+                            <i class="fa-solid fa-circle-exclamation"></i>
+                            Moderate Confidence
+                        </span>
+
+                    {% else %}
+                        <span class="confidence-low">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            Low Confidence
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- MODEL ACCURACY -->
+            <div class="panel model-accuracy-panel">
+
+                <div class="result-card-title">
+                    <i class="fa-solid fa-bullseye"></i>
+                    <h4>Machine Learning Model Accuracy</h4>
+                </div>
+
+                <div class="accuracy-grid">
+
+                    <div class="accuracy-card">
+                        <span class="accuracy-title">
+                            Gender Model Accuracy
+                        </span>
+
+                        {% if gender_model_accuracy is defined
+                              and gender_model_accuracy is not none %}
+
+                            <strong class="accuracy-value">
+                                {{ "%.2f"|format(gender_model_accuracy) }}%
+                            </strong>
+
+                            <progress
+                                class="accuracy-progress"
+                                value="{{ gender_model_accuracy|float }}"
+                                max="100"
+                            >{{ gender_model_accuracy|float }}%</progress>
+
+                        {% else %}
+
+                            <strong class="accuracy-not-available">
+                                Not yet evaluated
+                            </strong>
+
+                            <p class="accuracy-description">
+                                Run the gender model against a separate
+                                test dataset to obtain its accuracy.
+                            </p>
+
+                        {% endif %}
+                    </div>
+
+                    <div class="accuracy-card">
+                        <span class="accuracy-title">
+                            Growth Model Accuracy
+                        </span>
+
+                        {% if growth_model_accuracy is defined
+                              and growth_model_accuracy is not none %}
+
+                            <strong class="accuracy-value">
+                                {{ "%.2f"|format(growth_model_accuracy) }}%
+                            </strong>
+
+                            <progress
+                                class="accuracy-progress"
+                                value="{{ growth_model_accuracy|float }}"
+                                max="100"
+                            >{{ growth_model_accuracy|float }}%</progress>
+
+                        {% else %}
+
+                            <strong class="accuracy-not-available">
+                                Not yet evaluated
+                            </strong>
+
+                            <p class="accuracy-description">
+                                Run the growth model against a separate
+                                test dataset to obtain its accuracy.
+                            </p>
+
+                        {% endif %}
+                    </div>
+
+                </div>
+
+                <div class="accuracy-warning">
+                    <i class="fa-solid fa-circle-info"></i>
+
+                    <span>
+                        Prediction confidence refers only to the current
+                        uploaded image. Model accuracy measures performance
+                        across the complete test dataset.
+                    </span>
+                </div>
+            </div>
+
+            <!-- SUMMARY -->
+            <div class="panel classification-summary">
+
+                <h4>
+                    <i class="fa-solid fa-circle-info"></i>
+                    Classification Summary
+                </h4>
+
+                <p>
+                    The uploaded crayfish is classified as
+
+                    <strong>
+                        {{ result.gender }}
+                    </strong>
+
+                    with
+
+                    <strong>
+                        {{ "%.2f"|format(result.gender_confidence) }}%
+                    </strong>
+
+                    prediction confidence and is classified in the
+
+                    <strong>
+                        {{ result.growth.replace('_', ' ').title() }}
+                    </strong>
+
+                    growth stage with
+
+                    <strong>
+                        {{ "%.2f"|format(result.growth_confidence) }}%
+                    </strong>
+
+                    prediction confidence.
+                </p>
+            </div>
+
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+
+<style>
+    .classification-layout {
+        display: flex;
+        gap: 18px;
+        align-items: flex-start;
+        margin-top: 18px;
+        flex-wrap: wrap;
+    }
+
+    .classification-image-panel {
+        flex: 1;
+        min-width: 300px;
+        padding: 18px;
+        text-align: center;
+    }
+
+    .classification-image-panel h4 {
+        margin-top: 0;
+        margin-bottom: 12px;
+    }
+
+    .uploaded-image-wrapper {
+        padding: 12px;
+        border: 1px solid rgba(15, 127, 122, 0.15);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.25);
+    }
+
+    .uploaded-image-wrapper img {
+        display: block;
+        width: 100%;
+        max-height: 390px;
+        object-fit: contain;
+        border-radius: 10px;
+        border: 2px solid rgba(15, 127, 122, 0.12);
+    }
+
+    .classification-results {
+        flex: 1.2;
+        min-width: 340px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .result-card,
+    .model-accuracy-panel,
+    .classification-summary {
+        padding: 18px;
+        text-align: center;
+    }
+
+    .result-card-title {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 10px;
+    }
+
+    .result-card-title h4 {
+        margin: 0;
+    }
+
+    .main-result {
+        margin: 8px 0 5px;
+    }
+
+    .main-confidence {
+        margin: 7px 0 14px;
+        font-size: 14px;
+    }
+
+    .gender-scale {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 18px;
+    }
+
+    .gender-scale-row {
+        text-align: left;
+    }
+
+    .gender-scale-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 7px;
+        font-size: 14px;
+    }
+
+    .gender-scale-label span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 700;
+    }
+
+    .scale-track {
+        width: 100%;
+        height: 13px;
+        border-radius: 999px;
+        background: rgba(15, 44, 47, 0.12);
+        overflow: hidden;
+    }
+
+    .scale-fill {
+        height: 100%;
+        min-width: 0;
+        max-width: 100%;
+        border-radius: 999px;
+        transition: width 0.5s ease;
+    }
+
+    .male-fill {
+        background: linear-gradient(
+            90deg,
+            #60a5fa,
+            #2563eb
+        );
+    }
+
+    .female-fill {
+        background: linear-gradient(
+            90deg,
+            #fb8cbb,
+            #db2777
+        );
+    }
+
+    .growth-fill {
+        background: linear-gradient(
+            90deg,
+            #5dade2,
+            #3498db
+        );
+    }
+
+    .accuracy-fill {
+        background: linear-gradient(
+            90deg,
+            #42d392,
+            #0f7f7a
+        );
+    }
+
+    .growth-scale {
+        margin-top: 8px;
+    }
+
+    .confidence-status {
+        margin-top: 13px;
+        font-weight: 700;
+    }
+
+    .confidence-high {
+        color: #159957;
+    }
+
+    .confidence-moderate {
+        color: #cc8400;
+    }
+
+    .confidence-low {
+        color: #d64545;
+    }
+
+    .classification-note {
+        margin: 11px 0 0;
+        font-size: 13px;
+        opacity: 0.78;
+    }
+
+    .accuracy-grid {
+        display: grid;
+        grid-template-columns: repeat(
+            auto-fit,
+            minmax(220px, 1fr)
+        );
+        gap: 15px;
+        margin-top: 15px;
+    }
+
+    .accuracy-card {
+        padding: 17px;
+        border-radius: 14px;
+        background: rgba(15, 127, 122, 0.07);
+        border: 1px solid rgba(15, 127, 122, 0.14);
+        text-align: left;
+    }
+
+    .accuracy-title {
+        display: block;
+        margin-bottom: 9px;
+        font-size: 14px;
+        font-weight: 800;
+    }
+
+    .accuracy-value {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 28px;
+        color: #0f7f7a;
+    }
+
+    .accuracy-not-available {
+        display: block;
+        margin-bottom: 8px;
+        color: #cc8400;
+        font-size: 17px;
+    }
+
+    .accuracy-description {
+        margin: 0;
+        font-size: 13px;
+        opacity: 0.8;
+    }
+
+    .accuracy-warning {
+        display: flex;
+        align-items: flex-start;
+        gap: 9px;
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(52, 152, 219, 0.10);
+        border: 1px solid rgba(52, 152, 219, 0.20);
+        font-size: 13px;
+        line-height: 1.5;
+        text-align: left;
+    }
+
+    .classification-summary h4 {
+        margin-top: 0;
+        margin-bottom: 10px;
+    }
+
+    .classification-summary p {
+        margin: 0;
+        line-height: 1.7;
+    }
+
+    .gender-progress,
+    .growth-progress,
+    .accuracy-progress {
+        display: block;
+        width: 100%;
+        height: 14px;
+        margin-top: 8px;
+        border: none;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(15, 44, 47, 0.12);
+    }
+
+    .gender-progress::-webkit-progress-bar,
+    .growth-progress::-webkit-progress-bar,
+    .accuracy-progress::-webkit-progress-bar {
+        background: rgba(15, 44, 47, 0.12);
+        border-radius: 999px;
+    }
+
+    .male-progress::-webkit-progress-value {
+        background: linear-gradient(90deg, #60a5fa, #2563eb);
+        border-radius: 999px;
+    }
+
+    .female-progress::-webkit-progress-value {
+        background: linear-gradient(90deg, #fb8cbb, #db2777);
+        border-radius: 999px;
+    }
+
+    .growth-progress::-webkit-progress-value {
+        background: linear-gradient(90deg, #5dade2, #3498db);
+        border-radius: 999px;
+    }
+
+    .accuracy-progress::-webkit-progress-value {
+        background: linear-gradient(90deg, #42d392, #0f7f7a);
+        border-radius: 999px;
+    }
+
+    .male-progress::-moz-progress-bar {
+        background: #2563eb;
+    }
+
+    .female-progress::-moz-progress-bar {
+        background: #db2777;
+    }
+
+    .growth-progress::-moz-progress-bar {
+        background: #3498db;
+    }
+
+    .accuracy-progress::-moz-progress-bar {
+        background: #0f7f7a;
+    }
+
+    @media (max-width: 760px) {
+        .classification-layout {
+            flex-direction: column;
+        }
+
+        .classification-image-panel,
+        .classification-results {
+            width: 100%;
+            min-width: 0;
+        }
+    }
+</style>
+
+{% endblock %}

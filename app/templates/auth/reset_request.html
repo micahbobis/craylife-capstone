@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Reset Password{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+
+    <div class="panel glow dashboard-panel">
+        <h2><i class="fa-solid fa-lock"></i> Reset Password</h2>
+
+        <form method="POST">
+    {{ form.hidden_tag() }}
+
+    <div class="form-group">
+        {{ form.email.label }}
+        {{ form.email(class="form-control") }}
+    </div>
+
+    <div class="form-group text-center">
+        {{ form.submit(class="btn btn-primary") }}
+    </div>
+</form>
+    </div>
+
+</div>
+{% endblock %}

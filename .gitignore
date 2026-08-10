@@ -1,0 +1,18 @@
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+.env
+.idea/
+.vscode/
+
+arduino_reader.py
+test_arduino.py
+arduino_data.json
+run copy.py
+
+app/static/uploads/*
+!app/static/uploads/.gitkeep
+
+app/utils copy.py

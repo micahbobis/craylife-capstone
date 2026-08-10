@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Craylife{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+
+    <!-- Page Header -->
+    <div class="panel glow dashboard-header text-center">
+        <h1><i class="fa-solid fa-gear"></i> Settings</h1>
+        <p>Manage your account and system preferences efficiently.</p>
+    </div>
+
+    <!-- User Info Panel -->
+    <div class="panel glow dashboard-panel">
+        <h2><i class="fa-solid fa-user"></i> User Information</h2>
+        <form method="POST" action="{{ url_for('settings') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="username"><i class="fa-solid fa-user-tag"></i> Username</label>
+                <input type="text" id="username" name="username" class="form-control"
+                       value="{{ user.username if user is defined else '' }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email"><i class="fa-solid fa-envelope"></i> Email Address</label>
+                <input type="email" id="email" name="email" class="form-control"
+                       value="{{ user.email if user is defined else '' }}" required>
+            </div>
+
+            <div class="form-group text-center">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i> Update Info
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Password Change Panel -->
+    <div class="panel glow dashboard-panel">
+        <h2><i class="fa-solid fa-lock"></i> Change Password</h2>
+        <form method="POST" action="{{ url_for('password_reset') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="current_password"><i class="fa-solid fa-key"></i> Current Password</label>
+                <input type="password" id="current_password" name="current_password" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+                <label for="new_password"><i class="fa-solid fa-key-skeleton"></i> New Password</label>
+                <input type="password" id="new_password" name="new_password" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+                <label for="confirm_password"><i class="fa-solid fa-key-skeleton"></i> Confirm New Password</label>
+                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+            </div>
+
+            <div class="form-group text-center">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-paper-plane"></i> Update Password
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- System Settings Panel -->
+    <div class="panel glow dashboard-panel">
+        <h2><i class="fa-solid fa-sliders"></i> System Settings</h2>
+        <form method="POST" action="{{ url_for('settings') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="setting1"><i class="fa-solid fa-envelope-circle-check"></i> Notification Email</label>
+                <input type="email" id="setting1" name="setting1" class="form-control"
+                       value="{{ settings.setting1 if settings is defined and settings.setting1 else '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="setting2"><i class="fa-solid fa-boxes-stacked"></i> Default Batch Quantity</label>
+                <input type="number" id="setting2" name="setting2" class="form-control"
+                       value="{{ settings.setting2 if settings is defined and settings.setting2 else '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="setting3"><i class="fa-solid fa-bell"></i> Enable Notifications</label>
+                <select id="setting3" name="setting3" class="form-control">
+                    <option value="yes" {% if settings.setting3 == 'yes' %}selected{% endif %}>Yes</option>
+                    <option value="no" {% if settings.setting3 == 'no' %}selected{% endif %}>No</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="setting4"><i class="fa-solid fa-calendar-days"></i> Data Retention (Days)</label>
+                <input type="number" id="setting4" name="setting4" class="form-control"
+                       value="{{ settings.setting4 if settings is defined and settings.setting4 else 30 }}">
+            </div>
+
+            <div class="form-group text-center">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i> Save System Settings
+                </button>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

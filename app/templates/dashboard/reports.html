@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Craylife{% endblock %}
+
+{% block content %}
+<div class="dashboard-container reports-page">
+
+    <!-- Page Header -->
+    <section class="panel glow dashboard-header text-center">
+        <div class="header-content">
+            <h1><i class="fa-solid fa-chart-line"></i> Crayfish Reports</h1>
+            <p>View detailed sales, batch status, and classification results.</p>
+        </div>
+    </section>
+
+    <!-- Summary Cards -->
+    <section class="reports-summary">
+        <div class="stats-grid">
+
+            <!-- Total Batches -->
+            <div class="panel glow stat-card stat-card-highlight">
+                <div class="stat-card-top">
+                    <div class="stat-icon">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                    <div class="stat-heading">
+                        <h3>Total Batches</h3>
+                        <span>Current production overview</span>
+                    </div>
+                </div>
+
+                <div class="stat-card-main center-content">
+                    <div class="stat-number">{{ total_batches }}</div>
+                    <div class="stat-label">
+                        Batch{{ '' if total_batches == 1 else 'es' }} in Production
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activities -->
+            <div class="panel glow stat-card">
+                <div class="stat-card-top">
+                    <div class="stat-icon">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div class="stat-heading">
+                        <h3>Recent Activities</h3>
+                        <span>Latest system actions</span>
+                    </div>
+                </div>
+
+                {% if activities %}
+                <div class="card-list compact-list">
+                    {% for act in activities[:4] %}
+                    <div class="card-list-item activity-item">
+                        <div class="item-title">{{ act.action }}</div>
+                        <div class="item-meta">{{ act.timestamp.strftime('%Y-%m-%d %I:%M %p') }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">No recent activities.</div>
+                {% endif %}
+            </div>
+
+            <!-- Batch Status -->
+            <div class="panel glow stat-card">
+                <div class="stat-card-top">
+                    <div class="stat-icon">
+                        <i class="fa-solid fa-warehouse"></i>
+                    </div>
+                    <div class="stat-heading">
+                        <h3>Batch Status</h3>
+                        <span>Inventory snapshot</span>
+                    </div>
+                </div>
+
+                {% if inventory_items %}
+                <div class="card-list compact-list">
+                    {% for item in inventory_items[:4] %}
+                    <div class="card-list-item item-row batch-item">
+                        <div class="item-left">
+                            <span class="item-title">{{ item.name }}</span>
+                        </div>
+                        <div class="item-right">
+                            <span class="status-badge">{{ item.quantity }} units</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">No batch yet.</div>
+                {% endif %}
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Action Row -->
+    <section class="reports-actions">
+        <div class="action-bar">
+            <a href="{{ url_for('download_report') }}" class="btn btn-primary">
+                <i class="fa-solid fa-download"></i>
+                <span>Download Printable Report</span>
+            </a>
+        </div>
+    </section>
+
+    <!-- Main Records Grid -->
+   <!-- Main Records Grid -->
+<section class="reports-content-grid reports-tables-grid">
+
+    <!-- Report Records -->
+    <div class="panel glow dashboard-panel records-panel">
+        <div class="records-panel-header">
+            <div>
+                <h3><i class="fa-solid fa-table-list"></i> Report Records</h3>
+                <p class="section-subtitle">General report entries and totals</p>
+            </div>
+            <span class="section-meta">{{ reports|length }} total</span>
+        </div>
+
+        <div class="records-table-wrap">
+            <table class="dashboard-table organized-table">
+                <thead>
+                    <tr>
+                        <th class="th-id">ID</th>
+                        <th>Report Type</th>
+                        <th class="th-result">Count / Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td class="td-id">
+                            <span class="id-badge">#{{ report.id }}</span>
+                        </td>
+                        <td class="td-main">
+                            <div class="main-text">{{ report.type }}</div>
+                            <div class="sub-text">Recorded report entry</div>
+                        </td>
+                        <td class="td-result">
+                            <span class="value-badge">{{ report.count }}</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="empty-row text-center">
+                            No records yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Classification Records -->
+    <div class="panel glow dashboard-panel records-panel">
+        <div class="records-panel-header">
+            <div>
+                <h3><i class="fa-solid fa-fish"></i> Classification Records</h3>
+                <p class="section-subtitle">Saved image-based classification outputs</p>
+            </div>
+            <span class="section-meta">Image-based results</span>
+        </div>
+
+        <div class="records-table-wrap">
+            <table class="dashboard-table organized-table">
+                <thead>
+                    <tr>
+                        <th class="th-id">ID</th>
+                        <th>Image File</th>
+                        <th class="th-classification">Classification</th>
+                        <th class="th-date">Date</th>
+                    </tr>
+                </thead>
+               <tbody>
+    {% for log in classification_logs %}
+    <tr>
+        <td class="td-id">
+            <span class="id-badge">#{{ log.id }}</span>
+        </td>
+
+        <td class="td-main">
+            <div class="main-text">{{ log.image_filename }}</div>
+            <div class="sub-text">Uploaded image file</div>
+        </td>
+
+        <td class="td-result">
+            <span class="classification-badge">
+                {{ log.gender }} / {{ log.growth }}
+            </span>
+        </td>
+
+        <td class="td-date">
+            <div class="main-text">
+                {{ log.created_at.strftime('%Y-%m-%d') }}
+            </div>
+            <div class="sub-text">
+                {{ log.created_at.strftime('%H:%M') }}
+            </div>
+        </td>
+    </tr>
+    {% else %}
+    <tr>
+        <td colspan="4" class="empty-row text-center">
+            No classification records yet.
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+            </table>
+        </div>
+    </div>
+
+</section>
+
+</div>
+{% endblock %}

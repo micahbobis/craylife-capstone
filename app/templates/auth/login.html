@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Craylife{% endblock %}
+
+{% block content %}
+<div class="login-wrapper">
+    <div class="panel login-panel">
+
+        <h2 class="login-title">CrayLife Login</h2>
+        <p class="login-sub">Access your dashboard and manage your system</p>
+
+        <form method="POST" action="{{ url_for('login') }}">
+            {{ form.hidden_tag() }}
+
+            <!-- Username -->
+            <div class="form-group icon-input">
+                <label for="username">Username</label>
+                <i class="fa-solid fa-user input-icon"></i>
+                {{ form.username(
+                    autocomplete='username',
+                    class="form-control icon-field",
+                    placeholder="Enter your username"
+                ) }}
+            </div>
+
+            <!-- Password -->
+            <div class="form-group icon-input">
+                <label for="password">Password</label>
+                <i class="fa-solid fa-lock input-icon"></i>
+                {{ form.password(
+                    autocomplete='current-password',
+                    class="form-control icon-field",
+                    placeholder="Enter your password"
+                ) }}
+            </div>
+
+            <!-- Button -->
+            <button type="submit" class="button login-btn">Login</button>
+
+            <!-- Forgot -->
+            <div class="forgot-password">
+                <a href="{{ url_for('password_reset') }}">Forgot Password?</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
