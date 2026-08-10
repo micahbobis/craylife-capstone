@@ -248,7 +248,9 @@ def sensor_broadcast_loop():
                             db.session.commit()
 
             except Exception as error:
-                db.session.rollback()
+                with app.app_context():
+                    db.session.rollback()
+
                 print("DB monitoring save failed:", error)
 
             merged["_tick"] = int(time.time() * 1000)
