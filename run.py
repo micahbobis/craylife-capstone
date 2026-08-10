@@ -263,12 +263,12 @@ def sensor_broadcast_loop():
 if __name__ == "__main__":
     socketio.start_background_task(sensor_broadcast_loop)
 
-    print(app.url_map)
+    port = int(os.environ.get("PORT", 5000))
 
     socketio.run(
         app,
         host="0.0.0.0",
-        port=5000,
-        debug=True,
+        port=port,
+        debug=False,
         use_reloader=False,
     )
