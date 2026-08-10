@@ -714,17 +714,27 @@ print("=== MODEL DEBUG END ===")
 gender_model = None
 growth_model = None
 
-try:
-    gender_model = load_model(GENDER_MODEL_PATH, compile=False)
-    print("[OK] Gender model loaded")
-except Exception as e:
-    print("[ERROR] Gender:", repr(e))
 
-try:
-    growth_model = load_model(GROWTH_MODEL_PATH, compile=False)
-    print("[OK] Growth model loaded")
-except Exception as e:
-    print("[ERROR] Growth:", repr(e))
+def get_models():
+    global gender_model, growth_model
+
+    if gender_model is None:
+        print("[MODEL] Loading gender model...")
+        gender_model = load_model(
+            GENDER_MODEL_PATH,
+            compile=False
+        )
+        print("[OK] Gender model loaded")
+
+    if growth_model is None:
+        print("[MODEL] Loading growth model...")
+        growth_model = load_model(
+            GROWTH_MODEL_PATH,
+            compile=False
+        )
+        print("[OK] Growth model loaded")
+
+    return gender_model, growth_model
 # =========================================================
 # IMAGE PREPROCESSING
 # SAME SA TRAINING SAMPLE MO:
@@ -743,11 +753,7 @@ def preprocess_image_from_bytes(img_bytes):
 # =========================================================
 def classify_crayfish(img_bytes):
     try:
-        if gender_model is None:
-            return {"error": f"Gender model failed to load: {GENDER_MODEL_PATH}"}
-
-        if growth_model is None:
-            return {"error": f"Growth model failed to load: {GROWTH_MODEL_PATH}"}
+        gender_model, growth_model = get_models()
 
         img_array = preprocess_image_from_bytes(img_bytes)
 
