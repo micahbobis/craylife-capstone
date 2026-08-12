@@ -33,7 +33,137 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST" enctype="multipart/form-data">
+        
+
+        <form method="POST" enctype="multipart/form-data" id="classifyForm">
+
+            <input
+                type="hidden"
+                name="tracking_mode"
+                id="trackingMode"
+                value="quick"
+            >
+
+            <div class="classification-mode-panel">
+                <div class="mode-heading">
+                    <h4>
+                        <i class="fa-solid fa-sliders"></i>
+                        Classification Mode
+                    </h4>
+                    <p>
+                        Use Quick Classify for a normal prediction, or Batch Tracking to save and compare future growth observations.
+                    </p>
+                </div>
+
+                <div class="classification-mode-buttons">
+                    <button
+                        type="button"
+                        class="mode-btn active"
+                        id="quickModeBtn"
+                        const presetMode = "{{ preset_mode or 'quick' }}";
+
+setClassificationMode(
+    presetMode === "batch"
+        ? "batch"
+        : "quick"
+);
+                    >
+                        <i class="fa-solid fa-bolt"></i>
+                        <span>
+                            <strong>Quick Classify</strong>
+                            <small>No batch required</small>
+                        </span>
+                    </button>
+
+                    <button
+                        type="button"
+                        class="mode-btn"
+                        id="batchModeBtn"
+                        onclick="setClassificationMode('batch')"
+                    >
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>
+                            <strong>Classify with Batch Tracking</strong>
+                            <small>Save growth observations over time</small>
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <div
+                id="batchTrackingFields"
+                class="batch-tracking-fields"
+                style="display:none;"
+            >
+                <div class="batch-tracking-header">
+                    <div>
+                        <h4>
+                            <i class="fa-solid fa-box"></i>
+                            Batch Tracking
+                        </h4>
+                        <p>
+                            Choose an existing batch, or create a new batch first.
+                        </p>
+                    </div>
+
+<a
+    href="{{ url_for('create_batch') }}"
+    class="add-batch-action"
+>
+    <div class="add-batch-icon">
+        <i class="fa-solid fa-folder-plus"></i>
+    </div>
+
+    <div class="add-batch-text">
+        <strong>
+            Add New Batch
+        </strong>
+
+        <span>
+            Create a batch and upload
+            its image folder
+        </span>
+    </div>
+
+    <i
+        class="fa-solid
+        fa-arrow-right"
+    ></i>
+</a>
+                </div>
+
+                <div class="form-group">
+                    <label for="batch_id">
+                        Existing Batch
+                    </label>
+
+                    <select
+                        name="batch_id"
+                        id="batch_id"
+                        class="form-control"
+                    >
+                        <option value="">
+                            -- Choose Existing Batch --
+                        </option>
+
+                        {% for batch in batches %}
+<option
+    value="{{ batch.id }}"
+    {% if preset_batch_id == batch.id %}
+        selected
+    {% endif %}
+>
+    {{ batch.batch_name }}
+</option>
+{% endfor %}
+                    </select>
+                </div>
+
+                <p class="classification-note">
+                    The selected batch is not detected by the ML model. It only tells the system where to save this image observation for future growth comparison.
+                </p>
+            </div>
+
             <div class="form-group">
                 <label for="file">
                     <i class="fa-solid fa-file-image"></i>
@@ -54,12 +184,7 @@
                 <button
                     type="submit"
                     class="btn btn-primary"
-                    onclick="
-                        this.innerHTML =
-                        '<i class=&quot;fa-solid fa-spinner fa-spin&quot;></i> Processing...';
-                        this.disabled = true;
-                        this.form.submit();
-                    "
+                    id="classifySubmitBtn"
                 >
                     <i class="fa-solid fa-upload"></i>
                     Upload and Classify
@@ -95,17 +220,100 @@
 
         {% if result %}
 
-        {#
-            gender_raw_value is the binary model output:
-
-            closer to 1 = Male
-            closer to 0 = Female
-        #}
-
-        {% set male_percentage = result.gender_raw_value * 100 %}
-        {% set female_percentage = 100 - male_percentage %}
-
         <div class="classification-results">
+
+            {% if result.tracking_mode == "batch" and result.batch_name %}
+            <!-- BATCH OBSERVATION -->
+            <div class="panel result-card batch-observation-card">
+
+                <div class="result-card-title">
+                    <i class="fa-solid fa-box"></i>
+                    <h4>Batch Growth Observation</h4>
+                </div>
+
+                <div class="batch-observation-grid">
+                    <div>
+                        <span>Batch</span>
+                        <strong>{{ result.batch_name }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Observation</span>
+                        <strong>Observation {{ result.observation_number }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Estimated Length</span>
+                        <strong>
+                            {% if result.estimated_length_cm and result.estimated_length_cm != 'Unknown' %}
+                                {{ result.estimated_length_cm }} cm
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </strong>
+                    </div>
+
+                    {% if result.previous_length_cm is not none %}
+                    <div>
+                        <span>Previous Length</span>
+                        <strong>
+                            {{ "%.1f"|format(result.previous_length_cm) }} cm
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Size Change</span>
+                        <strong>
+                            {% if result.length_change_cm is not none %}
+                                {% if result.length_change_cm > 0 %}+{% endif %}{{ "%.1f"|format(result.length_change_cm) }} cm
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Elapsed Time</span>
+                        <strong>
+                            {{ result.elapsed_days if result.elapsed_days is not none else 0 }} day(s)
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Previous Stage</span>
+                        <strong>
+                            {% if result.previous_growth_stage %}
+                                {{ result.previous_growth_stage.replace('_', ' ').title() }}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </strong>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="growth-tracking-status-wrap">
+                    <span>Growth Tracking Status</span>
+                    {% set tracking_status = result.growth_tracking_status or 'FIRST OBSERVATION' %}
+                    <strong class="
+                        tracking-status-badge
+                        {% if tracking_status == 'GROWING' %}tracking-growing
+                        {% elif tracking_status == 'NO SIZE CHANGE' %}tracking-stable
+                        {% elif tracking_status == 'SIZE DECREASE DETECTED' %}tracking-warning
+                        {% else %}tracking-first{% endif %}
+                    ">
+                        {{ tracking_status }}
+                    </strong>
+                </div>
+
+                
+
+                <p class="classification-note">
+                    This dated observation is saved under the selected batch and is automatically compared with the previous image from the same batch.
+                </p>
+            </div>
+
+            {% endif %}
 
             <!-- GENDER RESULT -->
             <div class="panel result-card">
@@ -138,48 +346,11 @@
                     </strong>
                 </p>
 
-                <!-- MALE VS FEMALE SCALE -->
-                <div class="gender-scale">
-
-                    <div class="gender-scale-row">
-                        <div class="gender-scale-label">
-                            <span>
-                                <i class="fa-solid fa-mars"></i>
-                                Male
-                            </span>
-
-                            <strong>
-                                {{ "%.2f"|format(male_percentage) }}%
-                            </strong>
-                        </div>
-
-                        <progress
-                            class="gender-progress male-progress"
-                            value="{{ male_percentage|float }}"
-                            max="100"
-                        >{{ male_percentage|float }}%</progress>
-                    </div>
-
-                    <div class="gender-scale-row">
-                        <div class="gender-scale-label">
-                            <span>
-                                <i class="fa-solid fa-venus"></i>
-                                Female
-                            </span>
-
-                            <strong>
-                                {{ "%.2f"|format(female_percentage) }}%
-                            </strong>
-                        </div>
-
-                        <progress
-                            class="gender-progress female-progress"
-                            value="{{ female_percentage|float }}"
-                            max="100"
-                        >{{ female_percentage|float }}%</progress>
-                    </div>
-
-                </div>
+                <progress
+                    class="gender-progress"
+                    value="{{ result.gender_confidence|float }}"
+                    max="100"
+                >{{ result.gender_confidence|float }}%</progress>
 
                 <div class="confidence-status">
                     {% if result.gender_confidence >= 80 %}
@@ -203,8 +374,7 @@
                 </div>
 
                 <p class="classification-note">
-                    The two gender percentages total 100%.
-                    The higher percentage determines the displayed result.
+                    Confidence indicates how strongly the model supports this prediction for the uploaded image. It is not the same as overall model accuracy.
                 </p>
             </div>
 
@@ -233,6 +403,24 @@
                     max="100"
                 >{{ result.growth_confidence|float }}%</progress>
 
+                <div class="growth-observation-meta">
+                    <div>
+                        <span>Detected Stage</span>
+                        <strong>{{ result.growth.replace('_', ' ').title() }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Estimated Length</span>
+                        <strong>
+                            {% if result.estimated_length_cm and result.estimated_length_cm != 'Unknown' %}
+                                {{ result.estimated_length_cm }} cm
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </strong>
+                    </div>
+                </div>
+
                 <div class="confidence-status">
                     {% if result.growth_confidence >= 80 %}
                         <span class="confidence-high">
@@ -255,93 +443,6 @@
                 </div>
             </div>
 
-            <!-- MODEL ACCURACY -->
-            <div class="panel model-accuracy-panel">
-
-                <div class="result-card-title">
-                    <i class="fa-solid fa-bullseye"></i>
-                    <h4>Machine Learning Model Accuracy</h4>
-                </div>
-
-                <div class="accuracy-grid">
-
-                    <div class="accuracy-card">
-                        <span class="accuracy-title">
-                            Gender Model Accuracy
-                        </span>
-
-                        {% if gender_model_accuracy is defined
-                              and gender_model_accuracy is not none %}
-
-                            <strong class="accuracy-value">
-                                {{ "%.2f"|format(gender_model_accuracy) }}%
-                            </strong>
-
-                            <progress
-                                class="accuracy-progress"
-                                value="{{ gender_model_accuracy|float }}"
-                                max="100"
-                            >{{ gender_model_accuracy|float }}%</progress>
-
-                        {% else %}
-
-                            <strong class="accuracy-not-available">
-                                Not yet evaluated
-                            </strong>
-
-                            <p class="accuracy-description">
-                                Run the gender model against a separate
-                                test dataset to obtain its accuracy.
-                            </p>
-
-                        {% endif %}
-                    </div>
-
-                    <div class="accuracy-card">
-                        <span class="accuracy-title">
-                            Growth Model Accuracy
-                        </span>
-
-                        {% if growth_model_accuracy is defined
-                              and growth_model_accuracy is not none %}
-
-                            <strong class="accuracy-value">
-                                {{ "%.2f"|format(growth_model_accuracy) }}%
-                            </strong>
-
-                            <progress
-                                class="accuracy-progress"
-                                value="{{ growth_model_accuracy|float }}"
-                                max="100"
-                            >{{ growth_model_accuracy|float }}%</progress>
-
-                        {% else %}
-
-                            <strong class="accuracy-not-available">
-                                Not yet evaluated
-                            </strong>
-
-                            <p class="accuracy-description">
-                                Run the growth model against a separate
-                                test dataset to obtain its accuracy.
-                            </p>
-
-                        {% endif %}
-                    </div>
-
-                </div>
-
-                <div class="accuracy-warning">
-                    <i class="fa-solid fa-circle-info"></i>
-
-                    <span>
-                        Prediction confidence refers only to the current
-                        uploaded image. Model accuracy measures performance
-                        across the complete test dataset.
-                    </span>
-                </div>
-            </div>
-
             <!-- SUMMARY -->
             <div class="panel classification-summary">
 
@@ -351,30 +452,25 @@
                 </h4>
 
                 <p>
+                    {% if result.tracking_mode == "batch" and result.batch_name %}
+                        For
+                        <strong>{{ result.batch_name }}</strong>,
+                        this image was saved as
+                        <strong>Observation {{ result.observation_number }}</strong>.
+                    {% else %}
+                        This result was processed using
+                        <strong>Quick Classify</strong>
+                        and is not linked to a batch growth timeline.
+                    {% endif %}
+
                     The uploaded crayfish is classified as
-
-                    <strong>
-                        {{ result.gender }}
-                    </strong>
-
+                    <strong>{{ result.gender }}</strong>
                     with
-
-                    <strong>
-                        {{ "%.2f"|format(result.gender_confidence) }}%
-                    </strong>
-
+                    <strong>{{ "%.2f"|format(result.gender_confidence) }}%</strong>
                     prediction confidence and is classified in the
-
-                    <strong>
-                        {{ result.growth.replace('_', ' ').title() }}
-                    </strong>
-
+                    <strong>{{ result.growth.replace('_', ' ').title() }}</strong>
                     growth stage with
-
-                    <strong>
-                        {{ "%.2f"|format(result.growth_confidence) }}%
-                    </strong>
-
+                    <strong>{{ "%.2f"|format(result.growth_confidence) }}%</strong>
                     prediction confidence.
                 </p>
             </div>
@@ -386,18 +482,147 @@
 
 </div>
 
+
+<script>
+function setClassificationMode(mode) {
+    const trackingMode = document.getElementById("trackingMode");
+    const batchFields = document.getElementById("batchTrackingFields");
+    const batchSelect = document.getElementById("batch_id");
+    const quickBtn = document.getElementById("quickModeBtn");
+    const batchBtn = document.getElementById("batchModeBtn");
+
+    trackingMode.value = mode;
+
+    if (mode === "batch") {
+        batchFields.style.display = "block";
+        batchSelect.required = true;
+
+        quickBtn.classList.remove("active");
+        batchBtn.classList.add("active");
+    } else {
+        batchFields.style.display = "none";
+        batchSelect.required = false;
+        batchSelect.value = "";
+
+        batchBtn.classList.remove("active");
+        quickBtn.classList.add("active");
+    }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    setClassificationMode("quick");
+
+    const form = document.getElementById("classifyForm");
+    const submitBtn = document.getElementById("classifySubmitBtn");
+
+    if (form && submitBtn) {
+        form.addEventListener("submit", function () {
+            submitBtn.innerHTML =
+                '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+
+            submitBtn.disabled = true;
+        });
+    }
+});
+</script>
+
 <style>
-    .classification-layout {
+    .classification-mode-panel {
+        margin-bottom: 20px;
+        padding: 16px;
+        border-radius: 16px;
+        background: rgba(15, 127, 122, 0.06);
+        border: 1px solid rgba(15, 127, 122, 0.12);
+    }
+
+    .mode-heading h4,
+    .batch-tracking-header h4 {
+        margin: 0;
+    }
+
+    .mode-heading p,
+    .batch-tracking-header p {
+        margin: 5px 0 0;
+        font-size: 13px;
+        opacity: 0.78;
+    }
+
+    .classification-mode-buttons {
+        display: grid;
+        grid-template-columns: repeat(
+            auto-fit,
+            minmax(220px, 1fr)
+        );
+        gap: 12px;
+        margin-top: 14px;
+    }
+
+    .mode-btn {
         display: flex;
-        gap: 18px;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(15, 127, 122, 0.15);
+        background: rgba(255, 255, 255, 0.22);
+        cursor: pointer;
+        text-align: left;
+        transition: .2s ease;
+    }
+
+    .mode-btn:hover {
+        transform: translateY(-2px);
+    }
+
+    .mode-btn.active {
+        background: rgba(15, 127, 122, 0.12);
+        border-color: rgba(15, 127, 122, 0.35);
+        box-shadow: 0 8px 18px rgba(15, 127, 122, 0.10);
+    }
+
+    .mode-btn > i {
+        font-size: 20px;
+    }
+
+    .mode-btn span {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .mode-btn small {
+        font-size: 12px;
+        opacity: 0.72;
+    }
+
+    .batch-tracking-fields {
+        margin-bottom: 20px;
+        padding: 16px;
+        border-radius: 16px;
+        background: rgba(52, 152, 219, 0.07);
+        border: 1px solid rgba(52, 152, 219, 0.15);
+    }
+
+    .batch-tracking-header {
+        display: flex;
+        justify-content: space-between;
         align-items: flex-start;
-        margin-top: 18px;
+        gap: 12px;
+        margin-bottom: 14px;
         flex-wrap: wrap;
     }
 
+    .classification-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
+        margin-top: 18px;
+    }
+
     .classification-image-panel {
-        flex: 1;
-        min-width: 300px;
+        width: 100%;
+        min-width: 0;
         padding: 18px;
         text-align: center;
     }
@@ -417,25 +642,128 @@
     .uploaded-image-wrapper img {
         display: block;
         width: 100%;
-        max-height: 390px;
+        max-width: 620px;
+        max-height: 420px;
+        margin: 0 auto;
         object-fit: contain;
         border-radius: 10px;
         border: 2px solid rgba(15, 127, 122, 0.12);
     }
 
-    .classification-results {
-        flex: 1.2;
-        min-width: 340px;
+    .batch-observation-card {
+        text-align: left;
+    }
+
+    .batch-observation-grid,
+    .growth-observation-meta {
+        display: grid;
+        grid-template-columns: repeat(
+            auto-fit,
+            minmax(150px, 1fr)
+        );
+        gap: 12px;
+        margin-top: 14px;
+    }
+
+    .batch-observation-grid > div,
+    .growth-observation-meta > div {
+        padding: 13px;
+        border-radius: 12px;
+        background: rgba(15, 127, 122, 0.07);
+        border: 1px solid rgba(15, 127, 122, 0.12);
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 5px;
+    }
+
+    .batch-observation-grid span,
+    .growth-observation-meta span {
+        font-size: 12px;
+        font-weight: 700;
+        opacity: 0.75;
+    }
+
+    .batch-observation-grid strong,
+    .growth-observation-meta strong {
+        font-size: 16px;
+    }
+
+    .growth-tracking-status-wrap {
+        margin-top: 14px;
+        padding: 13px;
+        border-radius: 12px;
+        background: rgba(15, 127, 122, 0.06);
+        border: 1px solid rgba(15, 127, 122, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .growth-tracking-status-wrap > span {
+        font-size: 12px;
+        font-weight: 700;
+        opacity: 0.75;
+    }
+
+    .tracking-status-badge {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.3px;
+    }
+
+    .tracking-growing {
+        color: #157347;
+        background: rgba(25, 135, 84, 0.13);
+        border: 1px solid rgba(25, 135, 84, 0.25);
+    }
+
+    .tracking-stable {
+        color: #8a5a00;
+        background: rgba(245, 158, 11, 0.14);
+        border: 1px solid rgba(245, 158, 11, 0.28);
+    }
+
+    .tracking-warning {
+        color: #b02a37;
+        background: rgba(220, 53, 69, 0.13);
+        border: 1px solid rgba(220, 53, 69, 0.25);
+    }
+
+    .tracking-first {
+        color: #0f5f7f;
+        background: rgba(52, 152, 219, 0.10);
+        border: 1px solid rgba(52, 152, 219, 0.20);
+    }
+
+    .classification-results {
+        width: 100%;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        align-items: stretch;
     }
 
     .result-card,
-    .model-accuracy-panel,
     .classification-summary {
-        padding: 18px;
+        padding: 20px;
         text-align: center;
+        min-width: 0;
+    }
+
+    /* Batch observation, model accuracy and summary deserve full width. */
+    .batch-observation-card,
+    .classification-summary {
+        grid-column: 1 / -1;
+    }
+
+    /* Gender and Growth sit side-by-side on desktop. */
+    .classification-results > .result-card:not(.batch-observation-card) {
+        height: 100%;
     }
 
     .result-card-title {
@@ -561,64 +889,6 @@
         opacity: 0.78;
     }
 
-    .accuracy-grid {
-        display: grid;
-        grid-template-columns: repeat(
-            auto-fit,
-            minmax(220px, 1fr)
-        );
-        gap: 15px;
-        margin-top: 15px;
-    }
-
-    .accuracy-card {
-        padding: 17px;
-        border-radius: 14px;
-        background: rgba(15, 127, 122, 0.07);
-        border: 1px solid rgba(15, 127, 122, 0.14);
-        text-align: left;
-    }
-
-    .accuracy-title {
-        display: block;
-        margin-bottom: 9px;
-        font-size: 14px;
-        font-weight: 800;
-    }
-
-    .accuracy-value {
-        display: block;
-        margin-bottom: 12px;
-        font-size: 28px;
-        color: #0f7f7a;
-    }
-
-    .accuracy-not-available {
-        display: block;
-        margin-bottom: 8px;
-        color: #cc8400;
-        font-size: 17px;
-    }
-
-    .accuracy-description {
-        margin: 0;
-        font-size: 13px;
-        opacity: 0.8;
-    }
-
-    .accuracy-warning {
-        display: flex;
-        align-items: flex-start;
-        gap: 9px;
-        margin-top: 16px;
-        padding: 12px;
-        border-radius: 12px;
-        background: rgba(52, 152, 219, 0.10);
-        border: 1px solid rgba(52, 152, 219, 0.20);
-        font-size: 13px;
-        line-height: 1.5;
-        text-align: left;
-    }
 
     .classification-summary h4 {
         margin-top: 0;
@@ -631,8 +901,7 @@
     }
 
     .gender-progress,
-    .growth-progress,
-    .accuracy-progress {
+    .growth-progress {
         display: block;
         width: 100%;
         height: 14px;
@@ -644,8 +913,7 @@
     }
 
     .gender-progress::-webkit-progress-bar,
-    .growth-progress::-webkit-progress-bar,
-    .accuracy-progress::-webkit-progress-bar {
+    .growth-progress::-webkit-progress-bar {
         background: rgba(15, 44, 47, 0.12);
         border-radius: 999px;
     }
@@ -665,11 +933,6 @@
         border-radius: 999px;
     }
 
-    .accuracy-progress::-webkit-progress-value {
-        background: linear-gradient(90deg, #42d392, #0f7f7a);
-        border-radius: 999px;
-    }
-
     .male-progress::-moz-progress-bar {
         background: #2563eb;
     }
@@ -682,13 +945,98 @@
         background: #3498db;
     }
 
-    .accuracy-progress::-moz-progress-bar {
-        background: #0f7f7a;
+
+    /* =========================================
+       ADD NEW BATCH ACTION
+       ========================================= */
+    .add-batch-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+
+        min-height: 44px;
+        padding: 10px 16px;
+
+        border: none;
+        border-radius: 10px;
+
+        color: #ffffff !important;
+        text-decoration: none !important;
+        font-weight: 700;
+        font-size: 14px;
+
+        background: linear-gradient(
+            135deg,
+            #0f7f7a,
+            #159f91
+        );
+
+        box-shadow: 0 6px 14px rgba(
+            15,
+            127,
+            122,
+            0.20
+        );
+
+        cursor: pointer;
+        transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            opacity 0.18s ease;
+    }
+
+    .add-batch-action:hover {
+        color: #ffffff !important;
+        text-decoration: none !important;
+        transform: translateY(-2px);
+
+        box-shadow: 0 9px 18px rgba(
+            15,
+            127,
+            122,
+            0.28
+        );
+    }
+
+    .add-batch-action:active {
+        transform: translateY(0);
+    }
+
+    .add-batch-action > i {
+        font-size: 15px;
+        flex-shrink: 0;
+    }
+
+    .add-batch-icon {
+        display: none;
+    }
+
+    .add-batch-text {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .add-batch-text strong {
+        color: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .add-batch-text span {
+        display: none;
     }
 
     @media (max-width: 760px) {
-        .classification-layout {
-            flex-direction: column;
+        .add-batch-action {
+            width: 100%;
+        }
+
+
+        .classification-layout,
+        .classification-results {
+            grid-template-columns: 1fr;
         }
 
         .classification-image-panel,
@@ -696,7 +1044,47 @@
             width: 100%;
             min-width: 0;
         }
+
+        .batch-observation-card,
+        .classification-summary {
+            grid-column: auto;
+        }
+
     }
+
+
+    /* =========================================
+       CLASSIFICATION PAGE LAYOUT POLISH
+       ========================================= */
+    .dashboard-container {
+        max-width: 1120px;
+        margin: 0 auto;
+    }
+
+    .form-panel {
+        margin-top: 18px;
+    }
+
+    .classification-image-panel {
+        border-radius: 18px;
+    }
+
+    .classification-results > .result-card,
+    .classification-results > .classification-summary {
+        border-radius: 18px;
+    }
+
+    @media (max-width: 860px) {
+        .classification-results {
+            grid-template-columns: 1fr;
+        }
+
+        .batch-observation-card,
+        .classification-summary {
+            grid-column: auto;
+        }
+    }
+
 </style>
 
 {% endblock %}

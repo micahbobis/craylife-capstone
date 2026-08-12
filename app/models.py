@@ -55,22 +55,77 @@ class MonitoringRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ph_level = db.Column(db.Float)
     ph_status = db.Column(db.String(50))
+    
     water_level = db.Column(db.Float)
     water_status = db.Column(db.String(50))
+    
+    temperature = db.Column(db.Float)
+    temperature_status = db.Column(db.String(50))
+    
     arduino_status = db.Column(db.String(50))
     recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class ClassificationLog(db.Model):
     __tablename__ = "classification_log"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    image_filename = db.Column(db.String(255), nullable=True)
-    gender = db.Column(db.String(20), nullable=True)
-    growth = db.Column(db.String(50), nullable=True)
-    gender_confidence = db.Column(db.Float, nullable=True)
-    growth_confidence = db.Column(db.Float, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
+
+    batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey("batch.id"),
+        nullable=True
+    )
+
+    week_number = db.Column(
+        db.Integer,
+        nullable=True
+    )
+
+    image_filename = db.Column(
+        db.String(255),
+        nullable=True
+    )
+
+    gender = db.Column(
+        db.String(20),
+        nullable=True
+    )
+
+    growth = db.Column(
+        db.String(50),
+        nullable=True
+    )
+
+    gender_confidence = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    growth_confidence = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    estimated_length_cm = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    batch = db.relationship(
+        "Batch",
+        backref="classification_logs"
+    )
     
 class SensorDevice(db.Model):
     __tablename__ = "sensor_device"
@@ -113,3 +168,39 @@ class MonitoringAlert(db.Model):
     message = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+class BatchGrowthRecord(db.Model):
+    __tablename__ = "batch_growth_record"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey("batch.id"),
+        nullable=False
+    )
+
+    week_number = db.Column(db.Integer, nullable=False)
+
+    recorded_date = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    average_length_cm = db.Column(db.Float, nullable=True)
+
+    survivor_count = db.Column(db.Integer, nullable=True)
+
+    normal_growth_count = db.Column(db.Integer, default=0)
+
+    slow_growth_count = db.Column(db.Integer, default=0)
+
+    growth_stage = db.Column(db.String(50), nullable=True)
+
+    growth_status = db.Column(db.String(50), nullable=True)
+
+    notes = db.Column(db.String(255), nullable=True)
+
+    batch = db.relationship(
+        "Batch",
+        backref="growth_records"
+    )

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}
+Weekly Growth Record
+{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-container">
+
+    <div class="panel glow">
+        <h2>
+            Weekly Growth Record
+        </h2>
+
+        <p>
+            Batch:
+            <strong>{{ batch.batch_name }}</strong>
+        </p>
+
+        <form method="POST">
+
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+            >
+
+            <div class="form-group">
+                <label>Week Number</label>
+                <input
+                    type="number"
+                    name="week_number"
+                    min="1"
+                    required
+                    class="form-control"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Average Length (cm)</label>
+                <input
+                    type="number"
+                    step="0.1"
+                    name="average_length_cm"
+                    class="form-control"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Survivor Count</label>
+                <input
+                    type="number"
+                    name="survivor_count"
+                    class="form-control"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Normal Growth Count</label>
+                <input
+                    type="number"
+                    name="normal_growth_count"
+                    value="0"
+                    class="form-control"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Slow Growth Count</label>
+                <input
+                    type="number"
+                    name="slow_growth_count"
+                    value="0"
+                    class="form-control"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Growth Stage</label>
+
+                <select
+                    name="growth_stage"
+                    class="form-control"
+                >
+                    <option value="mid_juvenile">
+                        Mid Juvenile
+                    </option>
+                    <option value="juvenile">
+                        Juvenile
+                    </option>
+                    <option value="mid_adult">
+                        Mid Adult
+                    </option>
+                    <option value="adult">
+                        Adult
+                    </option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Notes</label>
+
+                <textarea
+                    name="notes"
+                    rows="3"
+                    class="form-control"
+                ></textarea>
+            </div>
+
+            <button
+                type="submit"
+                class="btn btn-primary"
+            >
+                Save Weekly Record
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+{% endblock %}

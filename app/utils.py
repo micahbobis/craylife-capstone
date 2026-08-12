@@ -20,6 +20,14 @@ def get_arduino_data():
             data = json.load(f)
 
         print("[get_arduino_data] LOADED:", data)
+        
+        temperature_value = data.get("Temperature")
+
+        data["Temperature Status"] = (
+            get_temperature_status(
+                temperature_value
+            )
+)
 
         ph_value = data.get("pH Level")
         ph_status = "Unknown"
@@ -190,3 +198,32 @@ def save_monitoring_record(data):
         db.session.rollback()
         print("[ERROR] save_monitoring_record:", e)
         return False
+    
+def get_temperature_status(value):
+    try:
+        temp = float(value)
+
+        cold_limit = float(
+            os.environ.get(
+                "TEMP_COLD_LIMIT",
+                22
+            )
+        )
+
+        warm_limit = float(
+            os.environ.get(
+                "TEMP_WARM_LIMIT",
+                30
+            )
+        )
+
+        if temp < cold_limit:
+            return "COLD"
+
+        elif temp > warm_limit:
+            return "WARM"
+
+        return "NORMAL"
+
+    except (TypeError, ValueError):
+        return "UNKNOWN"

@@ -1,7 +1,7 @@
 from flask import render_template, redirect, url_for, flash, request, session
 from app import app, db, csrf, mail, serializer
 from app.forms import LoginForm, RegistrationForm, BatchForm, RequestResetForm, ResetPasswordForm
-from app.models import User, Batch, Inventory, Sale, ActivityLog, ClassificationLog
+from app.models import User, Batch, Inventory, Sale, ActivityLog, ClassificationLog, BatchGrowthRecord
 from functools import wraps
 from flask_mail import Message
 import os
@@ -11,6 +11,7 @@ from datetime import datetime
 import tensorflow as tf
 import traceback
 import json
+import shutil
 import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
@@ -118,9 +119,63 @@ def estimate_length_and_growth_stage(img_bytes: bytes) -> dict:
     except Exception as e:
         return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": f"Exception: {e}"}
 
+# =========================================================
+# UNDERWATER TEMPERATURE STATUS
+# Adjust these thresholds later if your crayfish species
+# requires a different preferred water-temperature range.
+# =========================================================
+TEMP_COLD_MAX = 22.0
+TEMP_NORMAL_MAX = 28.0
+
+
+def get_temperature_status(value):
+    """
+    Convert the raw underwater temperature into a simple
+    dashboard status: COLD, NORMAL, HOT, or UNKNOWN.
+    """
+    try:
+        temp = float(value)
+    except (TypeError, ValueError):
+        return "UNKNOWN"
+
+    if temp <= TEMP_COLD_MAX:
+        return "COLD"
+
+    if temp <= TEMP_NORMAL_MAX:
+        return "NORMAL"
+
+    return "HOT"
+
+
+def normalize_sensor_temperature(data):
+    """
+    Ensure temperature-related keys are always present
+    in data returned to the dashboard.
+    """
+    payload = dict(data or {})
+
+    raw_temperature = payload.get("Temperature")
+
+    if raw_temperature in (None, "", "—", "Unknown"):
+        payload["Temperature"] = "—"
+        payload["Temperature Status"] = "UNKNOWN"
+        payload["Temperature Sensor Status"] = "Disconnected"
+        return payload
+
+    payload["Temperature Status"] = get_temperature_status(
+        raw_temperature
+    )
+    payload["Temperature Sensor Status"] = "Connected"
+
+    return payload
+
+
 @app.route("/arduino-data")
 def arduino_data():
-    return jsonify(get_arduino_data())
+    data = get_arduino_data() or {}
+    data = normalize_sensor_temperature(data)
+    return jsonify(data)
+
 
 def login_required(f):
     @wraps(f)
@@ -142,6 +197,20 @@ def sensor_update_api():
         water_level = data.get("water_level") or data.get("Water Level")
         water_quality = data.get("water_quality") or data.get("Water Quality")
         turbidity_ntu = data.get("turbidity_ntu") or data.get("Turbidity NTU")
+        temperature = data.get("temperature")
+
+        if temperature is None:
+            temperature = data.get("Temperature")
+
+        temperature_status = get_temperature_status(
+            temperature
+        )
+
+        temperature_sensor_status = (
+            "Connected"
+            if temperature not in (None, "", "—", "Unknown")
+            else "Disconnected"
+        )
 
         payload = {
             "pH Level": str(ph) if ph is not None else "—",
@@ -151,6 +220,9 @@ def sensor_update_api():
             "Turbidity NTU": str(turbidity_ntu) if turbidity_ntu is not None else "—",
             "Turbidity Voltage": str(data.get("Turbidity Voltage", "—")),
             "Turbidity ADC": str(data.get("Turbidity ADC", "—")),
+            "Temperature": str(temperature) if temperature is not None else "—",
+            "Temperature Status": temperature_status,
+            "Temperature Sensor Status": temperature_sensor_status,
             "Status": "Connected"
         }
 
@@ -183,7 +255,7 @@ def sensor_update_api():
 @app.route('/home')
 def home():
     user_id = session.get('user_id')
-
+    from app.models import BatchGrowthRecord
     batches = (
         Batch.query.filter_by(user_id=user_id).all()
         if user_id
@@ -191,6 +263,9 @@ def home():
     )
 
     sensor_data_raw = get_arduino_data() or {}
+    sensor_data_raw = normalize_sensor_temperature(
+        sensor_data_raw
+    )
 
     ph_value = sensor_data_raw.get("pH Level", "Unknown")
     ph_status = "Unknown"
@@ -217,6 +292,16 @@ def home():
         ph_status = "Unknown"
 
     water_level = sensor_data_raw.get("Water Level", "Unknown")
+    
+    temperature = sensor_data_raw.get(
+        "Temperature",
+        "—"
+    )
+
+    temperature_status = sensor_data_raw.get(
+        "Temperature Status",
+        get_temperature_status(temperature)
+    )
 
     sensor_data = [
         {
@@ -257,16 +342,39 @@ def home():
                 "Unknown"
             ),
             "unit": "NTU"
+            
+        },
+        
+        {
+            "name": "Underwater Temperature",
+            "value": temperature,
+            "unit": "°C"
+        },
+        {
+            "name": "Temperature Status",
+            "value": temperature_status,
+            "unit": ""
         },
     ]
 
-    # Growth monitoring
+    # =========================================================
+    # GROWTH MONITORING
+    #
+    # IMPORTANT:
+    # Weekly Batch Growth is derived from the REAL saved
+    # ClassificationLog observations of each batch.
+    # No random/manual BatchGrowthRecord values are used here.
+    # =========================================================
     growth_logs = []
     latest_growth = None
     growth_chart_labels = []
     growth_chart_values = []
+    batch_growth_summaries = []
 
     if user_id:
+        # -----------------------------------------------------
+        # Overall recent growth classifications
+        # -----------------------------------------------------
         growth_logs = (
             ClassificationLog.query
             .filter_by(user_id=user_id)
@@ -283,6 +391,7 @@ def home():
                 "mid_juvenile": 1,
                 "juvenile": 2,
                 "mid_adult": 3,
+                "sub_adult": 3,
                 "adult": 4,
             }
 
@@ -294,12 +403,176 @@ def home():
                 else:
                     label = "Unknown"
 
-                growth_chart_labels.append(label)
-
-                growth_key = (log.growth or "").lower()
-                growth_chart_values.append(
-                    stage_order.get(growth_key, 0)
+                growth_chart_labels.append(
+                    label
                 )
+
+                growth_key = (
+                    log.growth or ""
+                ).lower()
+
+                growth_chart_values.append(
+                    stage_order.get(
+                        growth_key,
+                        0
+                    )
+                )
+
+        # -----------------------------------------------------
+        # REAL-TIME / LIVE BATCH GROWTH SUMMARY
+        #
+        # Each card is based on actual ClassificationLog rows
+        # saved under that batch.
+        # -----------------------------------------------------
+        user_batches = (
+            Batch.query
+            .filter_by(user_id=user_id)
+            .order_by(Batch.created_date.asc())
+            .all()
+        )
+
+        for batch in user_batches:
+            observations = (
+                ClassificationLog.query
+                .filter_by(
+                    user_id=user_id,
+                    batch_id=batch.id
+                )
+                .order_by(
+                    ClassificationLog.created_at.asc()
+                )
+                .all()
+            )
+
+            if not observations:
+                continue
+
+            latest_observation = (
+                observations[-1]
+            )
+
+            previous_observation = (
+                observations[-2]
+                if len(observations) >= 2
+                else None
+            )
+
+            latest_length = (
+                latest_observation.estimated_length_cm
+            )
+
+            previous_length = (
+                previous_observation.estimated_length_cm
+                if previous_observation
+                else None
+            )
+
+            length_change_cm = None
+            elapsed_days = None
+
+            if (
+                latest_length is not None
+                and previous_length is not None
+            ):
+                length_change_cm = round(
+                    latest_length
+                    - previous_length,
+                    2
+                )
+
+            if (
+                previous_observation
+                and previous_observation.created_at
+                and latest_observation.created_at
+            ):
+                elapsed_days = max(
+                    0,
+                    (
+                        latest_observation.created_at
+                        - previous_observation.created_at
+                    ).days
+                )
+
+            # Growth status from the REAL previous/current
+            # observation comparison.
+            if len(observations) == 1:
+                growth_status = (
+                    "FIRST OBSERVATION"
+                )
+
+            elif length_change_cm is None:
+                growth_status = (
+                    "OBSERVATION SAVED"
+                )
+
+            elif length_change_cm > 0:
+                growth_status = "GROWING"
+
+            elif length_change_cm == 0:
+                growth_status = (
+                    "NO SIZE CHANGE"
+                )
+
+            else:
+                growth_status = (
+                    "SIZE DECREASE DETECTED"
+                )
+
+            batch_growth_summaries.append({
+                "batch_id": batch.id,
+                "batch_name": batch.batch_name,
+
+                # week_number is the saved observation sequence.
+                "week_number": (
+                    latest_observation.week_number
+                    or len(observations)
+                ),
+
+                "observation_count": len(
+                    observations
+                ),
+
+                "current_length_cm": (
+                    latest_length
+                ),
+
+                "previous_length_cm": (
+                    previous_length
+                ),
+
+                "length_change_cm": (
+                    length_change_cm
+                ),
+
+                "elapsed_days": (
+                    elapsed_days
+                ),
+
+                "growth_stage": (
+                    latest_observation.growth
+                ),
+
+                "growth_confidence": (
+                    latest_observation.growth_confidence
+                ),
+
+                "growth_status": (
+                    growth_status
+                ),
+
+                "latest_image_filename": (
+                    latest_observation.image_filename
+                ),
+
+                "latest_created_at": (
+                    latest_observation.created_at
+                ),
+
+                # Batch population comes from the actual Batch row.
+                "batch_quantity": (
+                    batch.quantity
+                )
+            })
 
     return render_template(
         'dashboard/home.html',
@@ -308,7 +581,8 @@ def home():
         latest_growth=latest_growth,
         growth_logs=growth_logs,
         growth_chart_labels=growth_chart_labels,
-        growth_chart_values=growth_chart_values
+        growth_chart_values=growth_chart_values,
+        batch_growth_summaries=batch_growth_summaries
     )
     
     
@@ -625,30 +899,435 @@ def dashboard():
 @app.route('/batch/create', methods=['GET', 'POST'])
 @login_required
 def create_batch():
-    form = BatchForm()
-    if form.validate_on_submit():
-        batch = Batch(
-            batch_name=form.batch_name.data,
-            user_id=session.get('user_id'),
-            quantity=int(form.quantity.data or 0)
+    user_id = session.get('user_id')
+
+    if request.method == 'POST':
+
+        batch_name = (
+            request.form.get('batch_name', '')
+            .strip()
         )
+
+        quantity = request.form.get(
+            'quantity',
+            type=int
+        )
+
+        if not batch_name:
+            flash(
+                'Please enter a batch name.',
+                'danger'
+            )
+            return render_template(
+                'dashboard/batch_form.html'
+            )
+
+        if quantity is None or quantity < 0:
+            flash(
+                'Please enter a valid quantity.',
+                'danger'
+            )
+            return render_template(
+                'dashboard/batch_form.html'
+            )
+
+        existing_batch = (
+            Batch.query
+            .filter_by(
+                user_id=user_id,
+                batch_name=batch_name
+            )
+            .first()
+        )
+
+        if existing_batch:
+            flash(
+                'A batch with this name already exists.',
+                'danger'
+            )
+            return render_template(
+                'dashboard/batch_form.html'
+            )
+
+        # ==========================================
+        # CREATE BATCH RECORD
+        # ==========================================
+        batch = Batch(
+            batch_name=batch_name,
+            user_id=user_id,
+            quantity=quantity,
+            status='Active'
+        )
+
         db.session.add(batch)
+        db.session.flush()
+
+        # ==========================================
+        # CREATE BATCH FOLDER
+        #
+        # Example:
+        # static/uploads/batches/12/
+        # ==========================================
+        batch_folder = os.path.join(
+            app.root_path,
+            'static',
+            'uploads',
+            'batches',
+            str(batch.id)
+        )
+
+        os.makedirs(
+            batch_folder,
+            exist_ok=True
+        )
+
+        # ==========================================
+        # RECEIVE ALL FILES FROM SELECTED FOLDER
+        # ==========================================
+        uploaded_files = request.files.getlist(
+            'batch_folder'
+        )
+
+        allowed_extensions = {
+            'jpg',
+            'jpeg',
+            'png'
+        }
+
+        saved_count = 0
+
+        for file in uploaded_files:
+
+            if not file or not file.filename:
+                continue
+
+            original_name = (
+                file.filename
+                .replace('\\', '/')
+                .split('/')[-1]
+            )
+
+            filename = secure_filename(
+                original_name
+            )
+
+            if not filename:
+                continue
+
+            if '.' not in filename:
+                continue
+
+            extension = (
+                filename
+                .rsplit('.', 1)[1]
+                .lower()
+            )
+
+            if extension not in allowed_extensions:
+                continue
+
+            unique_filename = (
+                f"{uuid.uuid4().hex}_"
+                f"{filename}"
+            )
+
+            destination = os.path.join(
+                batch_folder,
+                unique_filename
+            )
+
+            file.save(
+                destination
+            )
+
+            saved_count += 1
+
         db.session.commit()
 
-        # handle optional file upload
-        file = form.batch_file.data
-        if file:
-            uploads_dir = os.path.join(app.root_path, 'static', 'uploads')
-            os.makedirs(uploads_dir, exist_ok=True)
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(uploads_dir, filename)
-            file.save(file_path)
+        activity_log = ActivityLog(
+            user_id=user_id,
+            action=(
+                f"Created batch "
+                f"{batch.batch_name} "
+                f"with {saved_count} "
+                f"reference image(s)"
+            ),
+            timestamp=datetime.utcnow()
+        )
 
-        flash('Batch created successfully!', 'success')
-        return redirect(url_for('inventory'))
+        db.session.add(
+            activity_log
+        )
 
-    return render_template('dashboard/batch_form.html', form=form)
+        db.session.commit()
 
+        flash(
+            f'Batch "{batch.batch_name}" created '
+            f'with {saved_count} image(s).',
+            'success'
+        )
+
+        # Go back to classifier so bagong batch
+        # appears immediately in dropdown.
+        return redirect(
+            url_for('classify')
+        )
+
+    return render_template(
+        'dashboard/batch_form.html'
+    )
+
+
+
+# =========================================================
+# BATCH FOLDERS / MANAGEMENT
+# =========================================================
+@app.route('/batches')
+@login_required
+def batch_folders():
+    user_id = session.get('user_id')
+
+    batches = (
+        Batch.query
+        .filter_by(user_id=user_id)
+        .order_by(Batch.created_date.desc())
+        .all()
+    )
+
+    batch_items = []
+
+    for batch in batches:
+        observation_query = (
+            ClassificationLog.query
+            .filter_by(
+                user_id=user_id,
+                batch_id=batch.id
+            )
+        )
+
+        observation_count = observation_query.count()
+
+        latest_observation = (
+            observation_query
+            .order_by(
+                ClassificationLog.created_at.desc()
+            )
+            .first()
+        )
+
+        batch_items.append({
+            "batch": batch,
+            "observation_count": observation_count,
+            "latest_observation": latest_observation
+        })
+
+    return render_template(
+        'dashboard/batches.html',
+        batch_items=batch_items
+    )
+
+
+@app.route(
+    '/batch/<int:batch_id>/edit',
+    methods=['GET', 'POST']
+)
+@login_required
+def edit_batch(batch_id):
+    user_id = session.get('user_id')
+
+    batch = (
+        Batch.query
+        .filter_by(
+            id=batch_id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    if request.method == 'POST':
+        batch_name = (
+            request.form.get(
+                'batch_name',
+                ''
+            )
+            .strip()
+        )
+
+        quantity = request.form.get(
+            'quantity',
+            type=int
+        )
+
+        if not batch_name:
+            flash(
+                'Batch name is required.',
+                'danger'
+            )
+
+            return render_template(
+                'dashboard/edit_batch.html',
+                batch=batch
+            )
+
+        if quantity is None or quantity < 0:
+            flash(
+                'Please enter a valid quantity.',
+                'danger'
+            )
+
+            return render_template(
+                'dashboard/edit_batch.html',
+                batch=batch
+            )
+
+        duplicate = (
+            Batch.query
+            .filter(
+                Batch.user_id == user_id,
+                Batch.batch_name == batch_name,
+                Batch.id != batch.id
+            )
+            .first()
+        )
+
+        if duplicate:
+            flash(
+                'Another batch already uses that name.',
+                'danger'
+            )
+
+            return render_template(
+                'dashboard/edit_batch.html',
+                batch=batch
+            )
+
+        old_name = batch.batch_name
+
+        batch.batch_name = batch_name
+        batch.quantity = quantity
+
+        db.session.add(
+            ActivityLog(
+                user_id=user_id,
+                action=(
+                    f'Updated batch "{old_name}" '
+                    f'to "{batch.batch_name}" '
+                    f'with quantity {batch.quantity}'
+                ),
+                timestamp=datetime.utcnow()
+            )
+        )
+
+        db.session.commit()
+
+        flash(
+            'Batch updated successfully.',
+            'success'
+        )
+
+        return redirect(
+            url_for(
+                'batch_detail',
+                batch_id=batch.id
+            )
+        )
+
+    return render_template(
+        'dashboard/edit_batch.html',
+        batch=batch
+    )
+
+
+@app.route(
+    '/batch/<int:batch_id>/delete',
+    methods=['POST']
+)
+@login_required
+def delete_batch_record(batch_id):
+    user_id = session.get('user_id')
+
+    batch = (
+        Batch.query
+        .filter_by(
+            id=batch_id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    batch_name = batch.batch_name
+
+    try:
+        # Remove linked image-classification observations first.
+        ClassificationLog.query.filter_by(
+            user_id=user_id,
+            batch_id=batch.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        # Remove manual growth records for this batch.
+        BatchGrowthRecord.query.filter_by(
+            batch_id=batch.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        # Inventory may reference the batch.
+        Inventory.query.filter_by(
+            batch_id=batch.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        # Remove the physical reference-image folder.
+        batch_folder = os.path.join(
+            app.root_path,
+            'static',
+            'uploads',
+            'batches',
+            str(batch.id)
+        )
+
+        if os.path.isdir(batch_folder):
+            shutil.rmtree(
+                batch_folder,
+                ignore_errors=True
+            )
+
+        db.session.delete(batch)
+
+        db.session.add(
+            ActivityLog(
+                user_id=user_id,
+                action=f'Deleted batch "{batch_name}"',
+                timestamp=datetime.utcnow()
+            )
+        )
+
+        db.session.commit()
+
+        flash(
+            f'Batch "{batch_name}" deleted successfully.',
+            'success'
+        )
+
+    except Exception as error:
+        db.session.rollback()
+
+        print(
+            "[ERROR] Failed to delete batch:",
+            error
+        )
+
+        flash(
+            'Batch could not be deleted because it is still linked to other records.',
+            'danger'
+        )
+
+    return redirect(
+        url_for('batch_folders')
+    )
 
 @app.route('/inventory')
 @login_required
@@ -816,9 +1495,27 @@ def classify():
 
     result = None
     uploaded_file_url = None
+    user_id = session.get("user_id")
+    
+    preset_batch_id = request.args.get(
+    "batch_id",
+    type=int
+    )
 
-    # Ilagay lang ang tunay na model accuracy mula sa evaluation/test dataset.
-    # Huwag gamitin ang prediction confidence bilang model accuracy.
+    preset_mode = request.args.get(
+        "mode",
+        "quick"
+    )
+
+    # Existing batches created by the logged-in user.
+    batches = (
+        Batch.query
+        .filter_by(user_id=user_id)
+        .order_by(Batch.created_date.asc())
+        .all()
+    )
+
+    # Only put actual evaluated model accuracy here.
     gender_model_accuracy = None
     growth_model_accuracy = None
 
@@ -828,53 +1525,171 @@ def classify():
             result=result,
             uploaded_file_url=uploaded_file_url,
             gender_model_accuracy=gender_model_accuracy,
-            growth_model_accuracy=growth_model_accuracy
+            growth_model_accuracy=growth_model_accuracy,
+            batches=batches,
+            preset_batch_id=preset_batch_id,
+            preset_mode=preset_mode
         )
 
     if request.method == 'POST':
+
+        # =====================================================
+        # CLASSIFICATION MODE
+        #
+        # quick = normal classification only
+        # batch = classification + batch growth tracking
+        # =====================================================
+        tracking_mode = request.form.get(
+            "tracking_mode",
+            "quick"
+        )
+
+        batch_id = request.form.get(
+            "batch_id",
+            type=int
+        )
+
+        selected_batch = None
+        latest_batch_log = None
+        observation_number = None
+        week_number = None
+
+        # =====================================================
+        # BATCH TRACKING
+        # Batch is required ONLY when batch mode is selected.
+        # =====================================================
+        if tracking_mode == "batch":
+
+            if not batch_id:
+                flash(
+                    "Please choose an existing batch or create a new batch first.",
+                    "danger"
+                )
+                return render_classify_page()
+
+            selected_batch = (
+                Batch.query
+                .filter_by(
+                    id=batch_id,
+                    user_id=user_id
+                )
+                .first()
+            )
+
+            if not selected_batch:
+                flash(
+                    "Invalid batch selected.",
+                    "danger"
+                )
+                return render_classify_page()
+
+            # Get latest classification/observation of this batch.
+            latest_batch_log = (
+                ClassificationLog.query
+                .filter_by(
+                    user_id=user_id,
+                    batch_id=batch_id
+                )
+                .order_by(
+                    ClassificationLog.created_at.desc()
+                )
+                .first()
+            )
+
+            # Automatic observation number.
+            if latest_batch_log:
+                observation_number = (
+                    (latest_batch_log.week_number or 0) + 1
+                )
+            else:
+                observation_number = 1
+
+            # Keep using week_number DB column.
+            # For now it represents observation sequence.
+            week_number = observation_number
+
+        # =====================================================
+        # GET IMAGE
+        # =====================================================
         file = request.files.get('file')
 
-        # ===== VALIDATE FILE =====
         if not file or not file.filename:
-            flash('No file selected.', 'danger')
+            flash(
+                'No file selected.',
+                'danger'
+            )
             return render_classify_page()
 
-        original_filename = secure_filename(file.filename)
+        original_filename = secure_filename(
+            file.filename
+        )
 
         if not original_filename:
-            flash('Invalid file name.', 'danger')
+            flash(
+                'Invalid file name.',
+                'danger'
+            )
             return render_classify_page()
 
-        allowed_extensions = {'jpg', 'jpeg', 'png'}
+        allowed_extensions = {
+            'jpg',
+            'jpeg',
+            'png'
+        }
 
         if '.' not in original_filename:
-            flash('Invalid image file. Please upload JPG, JPEG, or PNG.', 'danger')
+            flash(
+                'Invalid image file. Please upload JPG, JPEG, or PNG.',
+                'danger'
+            )
             return render_classify_page()
 
-        file_extension = original_filename.rsplit('.', 1)[1].lower()
+        file_extension = (
+            original_filename
+            .rsplit('.', 1)[1]
+            .lower()
+        )
 
         if file_extension not in allowed_extensions:
-            flash('Invalid image format. Please upload JPG, JPEG, or PNG.', 'danger')
+            flash(
+                'Invalid image format. Please upload JPG, JPEG, or PNG.',
+                'danger'
+            )
             return render_classify_page()
 
         img_bytes = file.read()
 
         if not img_bytes:
-            flash('The uploaded image is empty or invalid.', 'danger')
+            flash(
+                'The uploaded image is empty or invalid.',
+                'danger'
+            )
             return render_classify_page()
 
-        # ===== VERIFY THAT FILE IS AN IMAGE =====
+        # =====================================================
+        # VERIFY IMAGE
+        # =====================================================
         try:
-            image = Image.open(io.BytesIO(img_bytes))
+            image = Image.open(
+                io.BytesIO(img_bytes)
+            )
+
             image.verify()
+
         except Exception:
-            flash('The uploaded file is not a valid image.', 'danger')
+            flash(
+                'The uploaded file is not a valid image.',
+                'danger'
+            )
             return render_classify_page()
 
-        # ===== SAVE UPLOADED IMAGE =====
+        # =====================================================
+        # SAVE UPLOADED IMAGE
+        # =====================================================
         try:
             unique_filename = (
-                f"{uuid.uuid4().hex}_{original_filename}"
+                f"{uuid.uuid4().hex}_"
+                f"{original_filename}"
             )
 
             upload_folder = os.path.join(
@@ -883,15 +1698,24 @@ def classify():
                 'uploads'
             )
 
-            os.makedirs(upload_folder, exist_ok=True)
+            os.makedirs(
+                upload_folder,
+                exist_ok=True
+            )
 
             save_path = os.path.join(
                 upload_folder,
                 unique_filename
             )
 
-            with open(save_path, 'wb') as uploaded_image:
-                uploaded_image.write(img_bytes)
+            with open(
+                save_path,
+                'wb'
+            ) as uploaded_image:
+
+                uploaded_image.write(
+                    img_bytes
+                )
 
             uploaded_file_url = url_for(
                 'static',
@@ -899,7 +1723,11 @@ def classify():
             )
 
         except Exception as error:
-            print("[ERROR] Image upload failed:", error)
+
+            print(
+                "[ERROR] Image upload failed:",
+                error
+            )
 
             flash(
                 f'Image upload failed: {str(error)}',
@@ -908,15 +1736,26 @@ def classify():
 
             return render_classify_page()
 
-        # ===== RUN CLASSIFICATION =====
+        # =====================================================
+        # RUN ML CLASSIFICATION
+        # =====================================================
         try:
-            print("=== ROUTE CALLED classify ===")
 
-            result = classify_crayfish(img_bytes)
+            print(
+                "=== ROUTE CALLED classify ==="
+            )
 
-            print("=== ROUTE RESULT ===", result)
+            result = classify_crayfish(
+                img_bytes
+            )
+
+            print(
+                "=== ROUTE RESULT ===",
+                result
+            )
 
         except Exception as error:
+
             traceback.print_exc()
 
             flash(
@@ -925,68 +1764,90 @@ def classify():
             )
 
             result = None
+
             return render_classify_page()
 
+        # =====================================================
+        # VALIDATE MODEL RESULT
+        # =====================================================
         if not isinstance(result, dict):
+
             flash(
                 'The classification model returned an invalid result.',
                 'danger'
             )
 
             result = None
+
             return render_classify_page()
 
         if result.get('error'):
-            flash(result['error'], 'danger')
+
+            flash(
+                result['error'],
+                'danger'
+            )
+
             result = None
+
             return render_classify_page()
 
-        # ===== EXTRACT RESULTS =====
-        gender_result = result.get('gender', 'Unknown')
-        growth_result = result.get('growth', 'Unknown')
+        # =====================================================
+        # EXTRACT MODEL RESULTS
+        # =====================================================
+        gender_result = result.get(
+            'gender',
+            'Unknown'
+        )
 
-        gender_confidence = result.get('gender_confidence')
-        growth_confidence = result.get('growth_confidence')
+        growth_result = result.get(
+            'growth',
+            'Unknown'
+        )
 
-        # ===== SAFE FLOAT CONVERSION =====
+        gender_confidence = result.get(
+            'gender_confidence'
+        )
+
+        growth_confidence = result.get(
+            'growth_confidence'
+        )
+
+        # =====================================================
+        # SAFE FLOAT CONVERSION
+        # =====================================================
         try:
-            gender_confidence = float(gender_confidence)
+            gender_confidence = float(
+                gender_confidence
+            )
+
         except (TypeError, ValueError):
             gender_confidence = 0.0
 
         try:
-            growth_confidence = float(growth_confidence)
+            growth_confidence = float(
+                growth_confidence
+            )
+
         except (TypeError, ValueError):
             growth_confidence = 0.0
 
-        # Ensure percentages stay between 0 and 100.
         gender_confidence = max(
             0.0,
-            min(100.0, gender_confidence)
+            min(
+                100.0,
+                gender_confidence
+            )
         )
 
         growth_confidence = max(
             0.0,
-            min(100.0, growth_confidence)
+            min(
+                100.0,
+                growth_confidence
+            )
         )
 
-        # ===== MALE/FEMALE SCALE OUT OF 100 =====
-        if str(gender_result).strip().lower() == 'male':
-            male_percentage = gender_confidence
-            female_percentage = 100.0 - gender_confidence
-
-        elif str(gender_result).strip().lower() == 'female':
-            female_percentage = gender_confidence
-            male_percentage = 100.0 - gender_confidence
-
-        else:
-            male_percentage = 0.0
-            female_percentage = 0.0
-
-        # Add formatted values directly to result.
-        # The HTML can use:
-        # result.male_percentage
-        # result.female_percentage
         result['gender'] = gender_result
         result['growth'] = growth_result
 
@@ -1000,64 +1861,297 @@ def classify():
             2
         )
 
-        result['male_percentage'] = round(
-            male_percentage,
-            2
+        # =====================================================
+        # ESTIMATED LENGTH / GROWTH STAGE
+        # =====================================================
+        result['estimated_length_cm'] = (
+            result.get(
+                'estimated_length_cm',
+                'Unknown'
+            )
         )
 
-        result['female_percentage'] = round(
-            female_percentage,
-            2
+        result['estimated_growth_stage'] = (
+            result.get(
+                'estimated_growth_stage',
+                'Unknown'
+            )
         )
 
-        # Preserve the length and stage values returned by the classifier.
-        result['estimated_length_cm'] = result.get(
-            'estimated_length_cm',
-            'Unknown'
+        estimated_length_raw = (
+            result.get(
+                'estimated_length_cm'
+            )
         )
 
-        result['estimated_growth_stage'] = result.get(
-            'estimated_growth_stage',
-            'Unknown'
+        estimated_length_value = None
+
+        if estimated_length_raw:
+
+            try:
+                estimated_length_value = float(
+                    str(
+                        estimated_length_raw
+                    )
+                    .replace(
+                        "cm",
+                        ""
+                    )
+                    .strip()
+                )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+                estimated_length_value = None
+
+        # =====================================================
+        # OPTIONAL BATCH GROWTH COMPARISON
+        # =====================================================
+        previous_length = None
+        length_change = None
+        elapsed_days = None
+        growth_tracking_status = None
+        previous_growth_stage = None
+
+        if selected_batch:
+
+            growth_tracking_status = (
+                "FIRST OBSERVATION"
+            )
+
+            if latest_batch_log:
+
+                previous_length = (
+                    latest_batch_log.estimated_length_cm
+                )
+
+                previous_growth_stage = (
+                    latest_batch_log.growth
+                )
+
+                # Calculate how many days passed.
+                if latest_batch_log.created_at:
+
+                    elapsed = (
+                        datetime.utcnow()
+                        - latest_batch_log.created_at
+                    )
+
+                    elapsed_days = max(
+                        0,
+                        elapsed.days
+                    )
+
+                # Compare previous and current estimated length.
+                if (
+                    previous_length is not None
+                    and estimated_length_value is not None
+                ):
+
+                    length_change = (
+                        estimated_length_value
+                        - previous_length
+                    )
+
+                    if length_change > 0:
+
+                        growth_tracking_status = (
+                            "GROWING"
+                        )
+
+                    elif length_change == 0:
+
+                        growth_tracking_status = (
+                            "NO SIZE CHANGE"
+                        )
+
+                    else:
+
+                        growth_tracking_status = (
+                            "SIZE DECREASE DETECTED"
+                        )
+
+        # =====================================================
+        # SEND TRACKING INFORMATION TO HTML
+        # =====================================================
+        result['tracking_mode'] = (
+            tracking_mode
         )
 
-        # ===== SAVE CLASSIFICATION TO DATABASE =====
+        result['batch_id'] = (
+            selected_batch.id
+            if selected_batch
+            else None
+        )
+
+        result['batch_name'] = (
+            selected_batch.batch_name
+            if selected_batch
+            else None
+        )
+
+        result['observation_number'] = (
+            observation_number
+            if selected_batch
+            else None
+        )
+
+        result['previous_length_cm'] = (
+            previous_length
+        )
+
+        result['length_change_cm'] = (
+            round(
+                length_change,
+                2
+            )
+            if length_change is not None
+            else None
+        )
+
+        result['elapsed_days'] = (
+            elapsed_days
+        )
+
+        result['growth_tracking_status'] = (
+            growth_tracking_status
+        )
+
+        result['previous_growth_stage'] = (
+            previous_growth_stage
+        )
+
+        # =====================================================
+        # SAVE CLASSIFICATION TO DATABASE
+        #
+        # QUICK:
+        #   batch_id = NULL
+        #
+        # BATCH:
+        #   batch_id = selected batch
+        #   week_number = observation number
+        # =====================================================
         try:
-            user_id = session.get('user_id') or 1
+
             current_time = datetime.utcnow()
 
             classification_log = ClassificationLog(
+
                 user_id=user_id,
-                image_filename=unique_filename,
-                gender=gender_result,
-                growth=growth_result,
-                gender_confidence=gender_confidence,
-                growth_confidence=growth_confidence,
-                created_at=current_time
+
+                batch_id=(
+                    selected_batch.id
+                    if selected_batch
+                    else None
+                ),
+
+                week_number=(
+                    week_number
+                    if selected_batch
+                    else None
+                ),
+
+                image_filename=(
+                    unique_filename
+                ),
+
+                gender=(
+                    gender_result
+                ),
+
+                growth=(
+                    growth_result
+                ),
+
+                gender_confidence=(
+                    gender_confidence
+                ),
+
+                growth_confidence=(
+                    growth_confidence
+                ),
+
+                estimated_length_cm=(
+                    estimated_length_value
+                ),
+
+                created_at=(
+                    current_time
+                )
             )
 
-            activity_log = ActivityLog(
-                user_id=user_id,
-                action=(
-                    f"Classified image: "
+            # =================================================
+            # ACTIVITY LOG MESSAGE
+            # =================================================
+            if selected_batch:
+
+                activity_text = (
+                    f"Batch "
+                    f"{selected_batch.batch_name} "
+                    f"Observation "
+                    f"{observation_number}: "
+                    f"{growth_result} growth "
+                    f"({growth_confidence:.2f}% confidence)"
+                )
+
+            else:
+
+                activity_text = (
+                    f"Quick classification: "
                     f"{gender_result} "
                     f"({gender_confidence:.2f}%) / "
                     f"{growth_result} "
                     f"({growth_confidence:.2f}%)"
-                ),
+                )
+
+            activity_log = ActivityLog(
+                user_id=user_id,
+                action=activity_text,
                 timestamp=current_time
             )
 
-            db.session.add(classification_log)
-            db.session.add(activity_log)
-            db.session.commit()
-
-            print(
-                "[OK] Classification result and "
-                "activity saved to DB"
+            db.session.add(
+                classification_log
             )
 
+            db.session.add(
+                activity_log
+            )
+
+            db.session.commit()
+
+            if selected_batch:
+
+                print(
+                    "[OK] Batch observation saved:",
+                    selected_batch.batch_name,
+                    "Observation",
+                    observation_number
+                )
+
+                flash(
+                    f'Observation {observation_number} was successfully added to '
+                    f'{selected_batch.batch_name}.',
+                    'success'
+                )
+
+                return redirect(
+                    url_for(
+                        'batch_detail',
+                        batch_id=selected_batch.id
+                    )
+                )
+
+            else:
+
+                print(
+                    "[OK] Quick classification saved"
+                )
+
         except Exception as error:
+
             db.session.rollback()
 
             print(
@@ -1066,13 +2160,11 @@ def classify():
             )
 
             flash(
-                'Classification succeeded, but the result '
-                'could not be saved to the database.',
+                'Classification succeeded, but the result could not be saved to the database.',
                 'warning'
             )
 
     return render_classify_page()
-@app.route('/verify-email-change/<token>')
 
 def verify_email_change(token):
 
@@ -1130,3 +2222,237 @@ def reset_password_token(token):
         return redirect(url_for("login"))
 
     return render_template("auth/reset_password.html")
+
+@app.route(
+    "/batch/<int:batch_id>/growth/add",
+    methods=["GET", "POST"]
+)
+@login_required
+def add_batch_growth(batch_id):
+
+    batch = Batch.query.get_or_404(batch_id)
+
+    if batch.user_id != session.get("user_id"):
+        flash(
+            "Unauthorized batch access.",
+            "danger"
+        )
+        return redirect(
+            url_for("home")
+        )
+
+    if request.method == "POST":
+
+        week_number = request.form.get(
+            "week_number",
+            type=int
+        )
+
+        average_length_cm = request.form.get(
+            "average_length_cm",
+            type=float
+        )
+
+        survivor_count = request.form.get(
+            "survivor_count",
+            type=int
+        )
+
+        normal_growth_count = request.form.get(
+            "normal_growth_count",
+            type=int,
+            default=0
+        )
+
+        slow_growth_count = request.form.get(
+            "slow_growth_count",
+            type=int,
+            default=0
+        )
+
+        growth_stage = request.form.get(
+            "growth_stage"
+        )
+
+        notes = request.form.get(
+            "notes"
+        )
+
+        if normal_growth_count > slow_growth_count:
+            growth_status = "NORMAL"
+
+        elif slow_growth_count > normal_growth_count:
+            growth_status = "SLOW"
+
+        else:
+            growth_status = "STABLE"
+
+        record = BatchGrowthRecord(
+            batch_id=batch.id,
+            week_number=week_number,
+            average_length_cm=average_length_cm,
+            survivor_count=survivor_count,
+            normal_growth_count=normal_growth_count,
+            slow_growth_count=slow_growth_count,
+            growth_stage=growth_stage,
+            growth_status=growth_status,
+            notes=notes
+        )
+
+        db.session.add(record)
+        db.session.commit()
+
+        flash(
+            "Weekly growth record saved.",
+            "success"
+        )
+
+        return redirect(
+            url_for("home")
+        )
+
+    return render_template(
+        "dashboard/growth_record_form.html",
+        batch=batch
+    )
+    
+@app.route('/batch/<int:batch_id>')
+@login_required
+def batch_detail(batch_id):
+    user_id = session.get('user_id')
+
+    batch = (
+        Batch.query
+        .filter_by(
+            id=batch_id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    observations = (
+        ClassificationLog.query
+        .filter_by(
+            user_id=user_id,
+            batch_id=batch.id
+        )
+        .order_by(
+            ClassificationLog.created_at.asc()
+        )
+        .all()
+    )
+
+    first_observation = (
+        observations[0]
+        if observations
+        else None
+    )
+
+    latest_observation = (
+        observations[-1]
+        if observations
+        else None
+    )
+
+    total_growth_cm = None
+    elapsed_days = None
+    latest_change_cm = None
+    latest_tracking_status = "NO OBSERVATIONS"
+
+    if first_observation and latest_observation:
+        if (
+            first_observation.estimated_length_cm is not None
+            and latest_observation.estimated_length_cm is not None
+        ):
+            total_growth_cm = round(
+                latest_observation.estimated_length_cm
+                - first_observation.estimated_length_cm,
+                2
+            )
+
+        if (
+            first_observation.created_at
+            and latest_observation.created_at
+        ):
+            elapsed_days = max(
+                0,
+                (
+                    latest_observation.created_at
+                    - first_observation.created_at
+                ).days
+            )
+
+    if len(observations) == 1:
+        latest_tracking_status = "FIRST OBSERVATION"
+
+    elif len(observations) >= 2:
+        previous_observation = observations[-2]
+
+        if (
+            previous_observation.estimated_length_cm is not None
+            and latest_observation.estimated_length_cm is not None
+        ):
+            latest_change_cm = round(
+                latest_observation.estimated_length_cm
+                - previous_observation.estimated_length_cm,
+                2
+            )
+
+            if latest_change_cm > 0:
+                latest_tracking_status = "GROWING"
+            elif latest_change_cm == 0:
+                latest_tracking_status = "NO SIZE CHANGE"
+            else:
+                latest_tracking_status = "SIZE DECREASE DETECTED"
+        else:
+            latest_tracking_status = "OBSERVATION SAVED"
+
+    # Initial reference images uploaded when this batch was created.
+    reference_images = []
+
+    batch_folder = os.path.join(
+        app.root_path,
+        'static',
+        'uploads',
+        'batches',
+        str(batch.id)
+    )
+
+    allowed_extensions = {
+        '.jpg',
+        '.jpeg',
+        '.png'
+    }
+
+    if os.path.isdir(batch_folder):
+        for filename in sorted(
+            os.listdir(batch_folder)
+        ):
+            extension = os.path.splitext(
+                filename
+            )[1].lower()
+
+            if extension in allowed_extensions:
+                reference_images.append(
+                    url_for(
+                        'static',
+                        filename=(
+                            f'uploads/batches/'
+                            f'{batch.id}/'
+                            f'{filename}'
+                        )
+                    )
+                )
+
+    return render_template(
+        'dashboard/batch_detail.html',
+        batch=batch,
+        observations=observations,
+        first_observation=first_observation,
+        latest_observation=latest_observation,
+        total_growth_cm=total_growth_cm,
+        elapsed_days=elapsed_days,
+        latest_change_cm=latest_change_cm,
+        latest_tracking_status=latest_tracking_status,
+        reference_images=reference_images
+    )

@@ -1,50 +1,613 @@
 {% extends "base.html" %}
 
-{% block title %}Batch Form - Craylife{% endblock %}
+{% block title %}
+Add New Batch - Craylife
+{% endblock %}
 
 {% block content %}
+
 <div class="dashboard-container">
 
-    <div class="panel glow">
-        <h2><i class="fa-solid fa-boxes-stacked"></i> Batch Form</h2>
-        <p>Create a new batch for your crayfish production.</p>
+    <div class="panel glow batch-page-header">
+
+        <div>
+            <h2>
+                <i class="fa-solid fa-boxes-stacked"></i>
+                Add New Batch
+            </h2>
+
+            <p>
+                Create a batch and upload its initial
+                reference image folder.
+            </p>
+        </div>
+
+        <a
+            href="{{ url_for('classify') }}"
+            class="batch-back-btn"
+        >
+            <i class="fa-solid fa-arrow-left"></i>
+            Back to Classifier
+        </a>
+
     </div>
 
-    <div class="panel form-panel">
-        <form method="POST" action="{{ url_for('create_batch') }}" enctype="multipart/form-data">
-            {{ form.hidden_tag() }}
 
-            <div class="form-group">
-                <label for="batch_name"><i class="fa-solid fa-tag"></i> {{ form.batch_name.label.text }}</label>
-                {{ form.batch_name(class="form-control", placeholder="Enter batch name") }}
-                {% for error in form.batch_name.errors %}
-                    <div class="text-danger">{{ error }}</div>
-                {% endfor %}
+    <div class="panel glow batch-create-panel">
+
+        <form
+            method="POST"
+            enctype="multipart/form-data"
+            id="batchCreateForm"
+        >
+
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+            >
+
+
+            <div class="batch-form-grid">
+
+                <div class="form-group">
+
+                    <label for="batch_name">
+                        <i class="fa-solid fa-tag"></i>
+                        Batch Name
+                    </label>
+
+                    <input
+                        type="text"
+                        name="batch_name"
+                        id="batch_name"
+                        class="form-control"
+                        placeholder="Example: Batch 1"
+                        required
+                    >
+
+                    <small>
+                        This name will appear in the
+                        Batch Tracking dropdown.
+                    </small>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label for="quantity">
+                        <i class="fa-solid fa-fish"></i>
+                        Starting Quantity
+                    </label>
+
+                    <input
+                        type="number"
+                        name="quantity"
+                        id="quantity"
+                        class="form-control"
+                        min="0"
+                        placeholder="Example: 150"
+                        required
+                    >
+
+                    <small>
+                        Enter the initial number of
+                        crayfish in this batch.
+                    </small>
+
+                </div>
+
             </div>
 
-            <div class="form-group">
-                <label for="quantity"><i class="fa-solid fa-hashtag"></i> {{ form.quantity.label.text }}</label>
-                {{ form.quantity(class="form-control", placeholder="Enter quantity") }}
-                {% for error in form.quantity.errors %}
-                    <div class="text-danger">{{ error }}</div>
-                {% endfor %}
+
+            <div class="batch-folder-section">
+
+                <div class="folder-icon">
+                    <i class="fa-solid fa-folder-open"></i>
+                </div>
+
+                <div class="folder-content">
+
+                    <h3>
+                        Batch Image Folder
+                    </h3>
+
+                    <p>
+                        Choose the folder containing
+                        the initial images for this batch.
+                    </p>
+
+                    <label
+                        for="batch_folder"
+                        class="folder-upload-btn"
+                    >
+                        <i class="fa-solid fa-folder-plus"></i>
+
+                        <span>
+                            Choose Batch Folder
+                        </span>
+                    </label>
+
+                    <input
+                        type="file"
+                        name="batch_folder"
+                        id="batch_folder"
+                        accept=".jpg,.jpeg,.png,image/*"
+                        webkitdirectory
+                        directory
+                        multiple
+                        hidden
+                    >
+
+                    <div
+                        id="folderSelectionInfo"
+                        class="folder-selection-info"
+                    >
+                        No folder selected
+                    </div>
+
+                </div>
+
             </div>
 
-            <div class="form-group">
-                <label for="batch_file"><i class="fa-solid fa-file-upload"></i> {{ form.batch_file.label.text }}</label>
-                {{ form.batch_file(class="form-control") }}
-                {% for error in form.batch_file.errors %}
-                    <div class="text-danger">{{ error }}</div>
-                {% endfor %}
+
+            <div class="batch-info-box">
+
+                <i class="fa-solid fa-circle-info"></i>
+
+                <div>
+                    <strong>
+                        How Batch Tracking works
+                    </strong>
+
+                    <p>
+                        These images are stored as the
+                        batch's initial reference set.
+                        When monitoring growth later,
+                        select this batch in the classifier
+                        and upload one current image.
+                    </p>
+                </div>
+
             </div>
 
-            <div class="form-group">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fa-solid fa-paper-plane"></i> Submit
+
+            <div class="batch-form-actions">
+
+                <a
+                    href="{{ url_for('classify') }}"
+                    class="batch-cancel-btn"
+                >
+                    Cancel
+                </a>
+
+                <button
+                    type="submit"
+                    class="batch-create-btn"
+                    id="createBatchBtn"
+                >
+                    <i class="fa-solid fa-plus"></i>
+                    Create Batch
                 </button>
+
             </div>
+
         </form>
+
     </div>
 
 </div>
+
+
+<script>
+
+const folderInput =
+    document.getElementById(
+        "batch_folder"
+    );
+
+const folderInfo =
+    document.getElementById(
+        "folderSelectionInfo"
+    );
+
+const batchForm =
+    document.getElementById(
+        "batchCreateForm"
+    );
+
+const createBtn =
+    document.getElementById(
+        "createBatchBtn"
+    );
+
+
+folderInput.addEventListener(
+    "change",
+    function () {
+
+        const files = Array.from(
+            this.files || []
+        );
+
+        if (!files.length) {
+
+            folderInfo.textContent =
+                "No folder selected";
+
+            return;
+        }
+
+        const firstPath =
+            files[0].webkitRelativePath || "";
+
+        const folderName =
+            firstPath.includes("/")
+                ? firstPath.split("/")[0]
+                : "Selected folder";
+
+        folderInfo.innerHTML = `
+            <strong>${folderName}</strong>
+            <span>
+                ${files.length} image(s) selected
+            </span>
+        `;
+    }
+);
+
+
+batchForm.addEventListener(
+    "submit",
+    function () {
+
+        createBtn.disabled = true;
+
+        createBtn.innerHTML = `
+            <i
+                class="fa-solid
+                fa-spinner
+                fa-spin"
+            ></i>
+            Creating Batch...
+        `;
+    }
+);
+
+</script>
+
+
+<style>
+
+.batch-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
+.batch-page-header h2 {
+    margin-bottom: 4px;
+}
+
+.batch-page-header p {
+    margin: 0;
+    opacity: 0.76;
+}
+
+.batch-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 700;
+    background: rgba(
+        15,
+        127,
+        122,
+        0.08
+    );
+    border: 1px solid rgba(
+        15,
+        127,
+        122,
+        0.16
+    );
+}
+
+.batch-create-panel {
+    margin-top: 18px;
+}
+
+.batch-form-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(230px, 1fr)
+        );
+    gap: 16px;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    opacity: 0.72;
+}
+
+.batch-folder-section {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+
+    margin-top: 22px;
+    padding: 22px;
+
+    border-radius: 18px;
+
+    border: 1px dashed
+        rgba(
+            15,
+            127,
+            122,
+            0.30
+        );
+
+    background:
+        rgba(
+            15,
+            127,
+            122,
+            0.05
+        );
+}
+
+.folder-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 64px;
+    height: 64px;
+
+    border-radius: 18px;
+
+    background:
+        rgba(
+            15,
+            127,
+            122,
+            0.10
+        );
+
+    font-size: 28px;
+}
+
+.folder-content {
+    flex: 1;
+}
+
+.folder-content h3 {
+    margin: 0 0 5px;
+}
+
+.folder-content p {
+    margin: 0 0 14px;
+    font-size: 13px;
+    opacity: 0.76;
+}
+
+.folder-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+
+    padding: 11px 16px;
+
+    border-radius: 13px;
+
+    cursor: pointer;
+
+    color: #fff;
+
+    font-weight: 800;
+
+    background:
+        linear-gradient(
+            135deg,
+            #0f7f7a,
+            #16a085
+        );
+
+    box-shadow:
+        0 8px 18px
+        rgba(
+            15,
+            127,
+            122,
+            0.18
+        );
+
+    transition:
+        transform .18s ease,
+        box-shadow .18s ease;
+}
+
+.folder-upload-btn:hover {
+    transform:
+        translateY(-2px);
+
+    box-shadow:
+        0 11px 22px
+        rgba(
+            15,
+            127,
+            122,
+            0.24
+        );
+}
+
+.folder-selection-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+
+    margin-top: 11px;
+
+    font-size: 13px;
+}
+
+.folder-selection-info span {
+    opacity: 0.72;
+}
+
+.batch-info-box {
+    display: flex;
+    gap: 12px;
+
+    margin-top: 20px;
+
+    padding: 15px;
+
+    border-radius: 14px;
+
+    background:
+        rgba(
+            52,
+            152,
+            219,
+            0.08
+        );
+
+    border:
+        1px solid
+        rgba(
+            52,
+            152,
+            219,
+            0.16
+        );
+}
+
+.batch-info-box > i {
+    margin-top: 3px;
+}
+
+.batch-info-box p {
+    margin:
+        4px 0 0;
+
+    font-size: 13px;
+
+    line-height: 1.55;
+}
+
+.batch-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+
+    gap: 12px;
+
+    margin-top: 22px;
+}
+
+.batch-create-btn,
+.batch-cancel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 9px;
+
+    padding: 11px 18px;
+
+    border-radius: 13px;
+
+    font-weight: 800;
+
+    text-decoration: none;
+}
+
+.batch-create-btn {
+    border: none;
+
+    cursor: pointer;
+
+    color: #fff;
+
+    background:
+        linear-gradient(
+            135deg,
+            #0f7f7a,
+            #059669
+        );
+
+    box-shadow:
+        0 9px 20px
+        rgba(
+            5,
+            150,
+            105,
+            0.20
+        );
+}
+
+.batch-create-btn:hover {
+    transform:
+        translateY(-2px);
+}
+
+.batch-cancel-btn {
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            0.08
+        );
+
+    border:
+        1px solid
+        rgba(
+            15,
+            127,
+            122,
+            0.16
+        );
+}
+
+
+@media (
+    max-width: 650px
+) {
+
+    .batch-folder-section {
+        align-items:
+            flex-start;
+
+        flex-direction:
+            column;
+    }
+
+    .batch-form-actions {
+        align-items:
+            stretch;
+
+        flex-direction:
+            column-reverse;
+    }
+
+    .batch-create-btn,
+    .batch-cancel-btn {
+        width: 100%;
+    }
+}
+
+</style>
+
 {% endblock %}

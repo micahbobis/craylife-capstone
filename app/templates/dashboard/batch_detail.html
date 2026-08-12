@@ -1,0 +1,636 @@
+{% extends "base.html" %}
+
+{% block title %}
+{{ batch.batch_name }} - Craylife
+{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-container">
+
+    <div class="panel glow batch-header">
+
+        <div>
+            <div class="batch-folder-title">
+                <i class="fa-solid fa-folder-open"></i>
+
+                <div>
+                    <h2>{{ batch.batch_name }}</h2>
+
+                    <p>
+                        Growth tracking and image observation history
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <a
+            href="{{ url_for('classify') }}?batch_id={{ batch.id }}&mode=batch"
+            class="btn btn-primary"
+        >
+            <i class="fa-solid fa-camera"></i>
+            Add New Observation
+        </a>
+
+    </div>
+
+
+    <div class="batch-summary-grid">
+
+        <div class="panel batch-summary-card">
+            <span>Starting Quantity</span>
+            <strong>
+                {{ batch.quantity or 0 }}
+            </strong>
+        </div>
+
+        <div class="panel batch-summary-card">
+            <span>Total Observations</span>
+            <strong>
+                {{ observations|length }}
+            </strong>
+        </div>
+
+        <div class="panel batch-summary-card">
+            <span>Latest Stage</span>
+
+            <strong>
+                {% if latest_observation %}
+                    {{
+                        latest_observation.growth
+                        .replace('_', ' ')
+                        .title()
+                    }}
+                {% else %}
+                    —
+                {% endif %}
+            </strong>
+        </div>
+
+        <div class="panel batch-summary-card">
+            <span>Total Growth</span>
+
+            <strong>
+                {% if total_growth_cm is not none %}
+                    {% if total_growth_cm > 0 %}+{% endif %}
+                    {{ "%.1f"|format(total_growth_cm) }} cm
+                {% else %}
+                    —
+                {% endif %}
+            </strong>
+        </div>
+
+    </div>
+
+
+    {% if first_observation and latest_observation %}
+
+    <div class="panel glow growth-overview">
+
+        <div class="section-heading">
+            <div>
+                <h3>
+                    <i class="fa-solid fa-chart-line"></i>
+                    Growth Overview
+                </h3>
+
+                <p>
+                    Comparison from first to latest observation
+                </p>
+            </div>
+        </div>
+
+        <div class="growth-comparison">
+
+            <div class="growth-comparison-item">
+                <span>First Observation</span>
+
+                <strong>
+                    {% if first_observation.estimated_length_cm is not none %}
+                        {{ "%.1f"|format(first_observation.estimated_length_cm) }} cm
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+
+                <small>
+                    {{
+                        first_observation.created_at.strftime('%b %d, %Y')
+                        if first_observation.created_at
+                        else ''
+                    }}
+                </small>
+            </div>
+
+            <div class="growth-arrow">
+                <i class="fa-solid fa-arrow-right"></i>
+            </div>
+
+            <div class="growth-comparison-item">
+                <span>Latest Observation</span>
+
+                <strong>
+                    {% if latest_observation.estimated_length_cm is not none %}
+                        {{ "%.1f"|format(latest_observation.estimated_length_cm) }} cm
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+
+                <small>
+                    {{
+                        latest_observation.created_at.strftime('%b %d, %Y')
+                        if latest_observation.created_at
+                        else ''
+                    }}
+                </small>
+            </div>
+
+        </div>
+
+        {% if elapsed_days is not none %}
+        <div class="elapsed-time">
+            Tracked across
+            <strong>{{ elapsed_days }} day(s)</strong>
+        </div>
+        {% endif %}
+
+    </div>
+
+    {% endif %}
+
+
+    <div class="panel glow observation-panel">
+
+        <div class="section-heading">
+
+            <div>
+                <h3>
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    Observation Timeline
+                </h3>
+
+                <p>
+                    Every classified image saved under this batch
+                </p>
+            </div>
+
+        </div>
+
+
+        {% if observations %}
+
+        <div class="observation-timeline">
+
+            {% for observation in observations %}
+
+            <div class="observation-card">
+
+                <div class="observation-image">
+
+                    {% if observation.image_filename %}
+
+                    <img
+                        src="{{ url_for(
+                            'static',
+                            filename='uploads/' ~ observation.image_filename
+                        ) }}"
+                        alt="Batch observation"
+                    >
+
+                    {% else %}
+
+                    <div class="observation-no-image">
+                        <i class="fa-solid fa-image"></i>
+                    </div>
+
+                    {% endif %}
+
+                </div>
+
+
+                <div class="observation-content">
+
+                    <div class="observation-top">
+
+                        <div>
+                            <span class="observation-number">
+                                Observation
+                                {{ observation.week_number }}
+                            </span>
+
+                            <small>
+                                {{
+                                    observation.created_at.strftime(
+                                        '%b %d, %Y %I:%M %p'
+                                    )
+                                    if observation.created_at
+                                    else ''
+                                }}
+                            </small>
+                        </div>
+
+                        <span class="growth-stage-badge">
+                            {{
+                                observation.growth
+                                .replace('_', ' ')
+                                .title()
+                                if observation.growth
+                                else 'Unknown'
+                            }}
+                        </span>
+
+                    </div>
+
+
+                    <div class="observation-stats">
+
+                        <div>
+                            <span>Length</span>
+
+                            <strong>
+                                {% if observation.estimated_length_cm is not none %}
+                                    {{
+                                        "%.1f"|format(
+                                            observation.estimated_length_cm
+                                        )
+                                    }} cm
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>Gender</span>
+
+                            <strong>
+                                {{ observation.gender or 'Unknown' }}
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>Growth Confidence</span>
+
+                            <strong>
+                                {% if observation.growth_confidence is not none %}
+                                    {{
+                                        "%.1f"|format(
+                                            observation.growth_confidence
+                                        )
+                                    }}%
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+        {% else %}
+
+        <div class="empty-batch-state">
+
+            <i class="fa-solid fa-camera"></i>
+
+            <h3>
+                No observations yet
+            </h3>
+
+            <p>
+                Classify an image under this batch
+                to start growth tracking.
+            </p>
+
+            <a
+                href="{{ url_for('classify') }}?batch_id={{ batch.id }}&mode=batch"
+                class="btn btn-primary"
+            >
+                Add First Observation
+            </a>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+
+<style>
+
+.batch-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.batch-folder-title {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.batch-folder-title > i {
+    font-size: 34px;
+    color: #d9a926;
+}
+
+.batch-folder-title h2 {
+    margin: 0;
+}
+
+.batch-folder-title p {
+    margin: 4px 0 0;
+    opacity: .72;
+}
+
+.batch-summary-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(170px, 1fr)
+        );
+    gap: 14px;
+    margin-top: 18px;
+}
+
+.batch-summary-card {
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.batch-summary-card span {
+    font-size: 12px;
+    opacity: .72;
+    font-weight: 700;
+}
+
+.batch-summary-card strong {
+    font-size: 24px;
+}
+
+.growth-overview,
+.observation-panel {
+    margin-top: 18px;
+}
+
+.section-heading h3 {
+    margin: 0;
+}
+
+.section-heading p {
+    margin: 4px 0 0;
+    opacity: .72;
+    font-size: 13px;
+}
+
+.growth-comparison {
+    margin-top: 18px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+
+    flex-wrap: wrap;
+}
+
+.growth-comparison-item {
+    padding: 16px 22px;
+
+    border-radius: 14px;
+
+    background:
+        rgba(
+            15,
+            127,
+            122,
+            .07
+        );
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+
+    min-width: 170px;
+}
+
+.growth-comparison-item span {
+    font-size: 12px;
+    opacity: .72;
+}
+
+.growth-comparison-item strong {
+    font-size: 25px;
+}
+
+.growth-comparison-item small {
+    opacity: .65;
+}
+
+.growth-arrow {
+    font-size: 20px;
+    opacity: .65;
+}
+
+.elapsed-time {
+    margin-top: 14px;
+    text-align: center;
+}
+
+.observation-timeline {
+    margin-top: 18px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.observation-card {
+    display: grid;
+    grid-template-columns:
+        150px 1fr;
+
+    gap: 16px;
+
+    padding: 14px;
+
+    border-radius: 16px;
+
+    background:
+        rgba(
+            15,
+            127,
+            122,
+            .05
+        );
+
+    border:
+        1px solid
+        rgba(
+            15,
+            127,
+            122,
+            .12
+        );
+}
+
+.observation-image {
+    height: 120px;
+
+    overflow: hidden;
+
+    border-radius: 12px;
+
+    background:
+        rgba(
+            15,
+            127,
+            122,
+            .08
+        );
+}
+
+.observation-image img {
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
+}
+
+.observation-no-image {
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 26px;
+    opacity: .5;
+}
+
+.observation-top {
+    display: flex;
+    justify-content: space-between;
+
+    gap: 12px;
+
+    flex-wrap: wrap;
+}
+
+.observation-top > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.observation-number {
+    font-weight: 800;
+}
+
+.growth-stage-badge {
+    display: inline-flex;
+    align-items: center;
+
+    padding: 6px 10px;
+
+    border-radius: 999px;
+
+    font-size: 11px;
+    font-weight: 800;
+
+    background:
+        rgba(
+            15,
+            127,
+            122,
+            .12
+        );
+
+    border:
+        1px solid
+        rgba(
+            15,
+            127,
+            122,
+            .20
+        );
+}
+
+.observation-stats {
+    display: grid;
+
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(120px, 1fr)
+        );
+
+    gap: 10px;
+
+    margin-top: 17px;
+}
+
+.observation-stats > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.observation-stats span {
+    font-size: 11px;
+    opacity: .7;
+}
+
+.empty-batch-state {
+    padding: 40px 20px;
+
+    text-align: center;
+}
+
+.empty-batch-state > i {
+    font-size: 34px;
+    opacity: .5;
+}
+
+.empty-batch-state h3 {
+    margin-bottom: 5px;
+}
+
+.empty-batch-state p {
+    opacity: .7;
+}
+
+@media (
+    max-width: 650px
+) {
+
+    .observation-card {
+        grid-template-columns: 1fr;
+    }
+
+    .observation-image {
+        height: 200px;
+    }
+}
+
+</style>
+
+{% endblock %}

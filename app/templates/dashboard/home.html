@@ -5,9 +5,28 @@
 {% block content %}
 <div class="dashboard-container">
 
-    <div class="panel welcome-panel glow text-center">
-        <h1><i class="fa-solid fa-house"></i> Craylife Dashboard</h1>
-        <p>Monitor your crayfish operations, track key metrics, and access important tools all in one place.</p>
+    <div class="panel welcome-panel glow dashboard-hero">
+        <div class="dashboard-hero-icon">
+            <i class="fa-solid fa-water"></i>
+        </div>
+
+        <div class="dashboard-hero-copy">
+            <span class="dashboard-hero-eyebrow">CRAYLIFE CONTROL CENTER</span>
+
+            <h1>
+                Craylife Dashboard
+            </h1>
+
+            <p>
+                Monitor water conditions, review crayfish growth,
+                and manage operational records from one dashboard.
+            </p>
+        </div>
+
+        <div class="dashboard-hero-badge">
+            <i class="fa-solid fa-circle-dot"></i>
+            Live Monitoring
+        </div>
     </div>
 
     <div class="panel sensor-panel glow">
@@ -40,6 +59,29 @@
                 <div class="sensor-value big-value" id="waterQualityValue">—</div>
                 <div class="sensor-sub strong-sub">Water clarity status</div>
                 <div class="individual-sensor-status" id="turbiditySensorConnection">
+                    ● Checking...
+                </div>
+            </div>
+
+            <div class="sensor-card sensor-card-pretty temperature-card" id="temperatureCard">
+                <div class="sensor-topline">
+                    <div class="sensor-title">
+                        <i class="fa-solid fa-temperature-half"></i>
+                        Underwater Temperature
+                    </div>
+                    <div class="mini-chip">Live</div>
+                </div>
+
+                <div class="sensor-value big-value" id="temperatureValue">—</div>
+
+                <div class="temperature-status-row">
+                    <span class="sensor-sub strong-sub">Water condition</span>
+                    <span class="temperature-status-badge temperature-unknown" id="temperatureStatus">
+                        UNKNOWN
+                    </span>
+                </div>
+
+                <div class="individual-sensor-status" id="temperatureSensorConnection">
                     ● Checking...
                 </div>
             </div>
@@ -205,6 +247,270 @@
         {% endif %}
     </div>
 
+    <div class="panel sensor-panel glow weekly-growth-panel" style="margin-top:20px;">
+
+        <div class="weekly-growth-header">
+
+            <div class="weekly-growth-header-icon">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+
+            <div class="weekly-growth-header-copy">
+                <span class="weekly-growth-eyebrow">
+                    LIVE BATCH TRACKING
+                </span>
+
+                <h2>
+                    Batch Growth Tracking
+                </h2>
+
+                <p>
+                    Automatically updated from actual images
+                    classified under each batch.
+                </p>
+            </div>
+
+        </div>
+
+
+        {% if batch_growth_summaries %}
+
+        <div class="weekly-growth-grid">
+
+            {% for item in batch_growth_summaries %}
+
+            <div class="weekly-batch-panel">
+
+                <div class="weekly-batch-panel-header">
+
+                    <div class="weekly-batch-name">
+
+                        <div class="weekly-batch-icon">
+                            <i class="fa-solid fa-box"></i>
+                        </div>
+
+                        <div>
+                            <span>Tracked Batch</span>
+                            <h3>
+                                {{ item.batch_name }}
+                            </h3>
+                        </div>
+
+                    </div>
+
+                    <span class="weekly-week-badge">
+                        Observation
+                        {{ item.week_number }}
+                    </span>
+
+                </div>
+
+
+            
+
+
+                <div class="weekly-stat-box-grid">
+
+                    <div class="weekly-stat-box">
+
+                        <div class="weekly-stat-icon">
+                            <i class="fa-solid fa-ruler"></i>
+                        </div>
+
+                        <span>
+                            Current Length
+                        </span>
+
+                        <strong>
+                            {% if item.current_length_cm is not none %}
+                                {{ '%.1f'|format(item.current_length_cm) }} cm
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+
+                    </div>
+
+
+                    <div class="weekly-stat-box">
+
+                        <div class="weekly-stat-icon">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </div>
+
+                        <span>
+                            Previous Length
+                        </span>
+
+                        <strong>
+                            {% if item.previous_length_cm is not none %}
+                                {{ '%.1f'|format(item.previous_length_cm) }} cm
+                            {% else %}
+                                First record
+                            {% endif %}
+                        </strong>
+
+                    </div>
+
+
+                    <div class="weekly-stat-box">
+
+                        <div class="weekly-stat-icon">
+                            <i class="fa-solid fa-arrow-trend-up"></i>
+                        </div>
+
+                        <span>
+                            Size Change
+                        </span>
+
+                        <strong>
+                            {% if item.length_change_cm is not none %}
+                                {% if item.length_change_cm > 0 %}+{% endif %}
+                                {{ '%.1f'|format(item.length_change_cm) }} cm
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+
+                    </div>
+
+
+                    <div class="weekly-stat-box">
+
+                        <div class="weekly-stat-icon">
+                            <i class="fa-solid fa-calendar-days"></i>
+                        </div>
+
+                        <span>
+                            Time Since Previous
+                        </span>
+
+                        <strong>
+                            {% if item.elapsed_days is not none %}
+                                {{ item.elapsed_days }} day(s)
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+
+                    </div>
+
+                </div>
+
+
+                <div class="weekly-detail-boxes">
+
+                    <div class="weekly-detail-box">
+
+                        <span>
+                            <i class="fa-solid fa-seedling"></i>
+                            Current Growth Stage
+                        </span>
+
+                        <strong>
+                            {% if item.growth_stage %}
+                                {{ item.growth_stage.replace('_', ' ').title() }}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </strong>
+
+                    </div>
+
+
+                    <div class="weekly-detail-box">
+
+                        <span>
+                            <i class="fa-solid fa-fish"></i>
+                            Batch Population
+                        </span>
+
+                        <strong>
+                            {{ item.batch_quantity or 0 }}
+                        </strong>
+
+                    </div>
+
+                </div>
+
+
+                <div class="weekly-live-status-row">
+
+                    <div>
+                        <span class="weekly-live-status-label">
+                            Growth Status
+                        </span>
+
+                        <strong>
+                            {{ item.growth_status }}
+                        </strong>
+                    </div>
+
+                    {% if item.growth_confidence is not none %}
+
+                    <div class="weekly-confidence-box">
+                        <span>
+                            Growth Confidence
+                        </span>
+
+                        <strong>
+                            {{ '%.1f'|format(item.growth_confidence) }}%
+                        </strong>
+                    </div>
+
+                    {% endif %}
+
+                </div>
+
+
+                <div class="weekly-batch-footer">
+
+                    <a
+                        href="{{ url_for(
+                            'batch_detail',
+                            batch_id=item.batch_id
+                        ) }}"
+                        class="weekly-growth-button"
+                    >
+                        <i class="fa-solid fa-folder-open"></i>
+                        View Batch History
+                    </a>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+
+        {% else %}
+
+        <div class="weekly-empty-panel">
+
+            <div class="weekly-empty-icon">
+                <i class="fa-solid fa-images"></i>
+            </div>
+
+            <div>
+                <h3>
+                    No tracked batch observations yet
+                </h3>
+
+                <p>
+                    Use Classify with Batch Tracking.
+                    Once an image is saved under a batch,
+                    its growth information will appear here automatically.
+                </p>
+            </div>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
     <div class="panel quick-actions-panel glow">
         <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
 
@@ -222,6 +528,12 @@
                     <h3>New Batch</h3>
                 </div>
             </a>
+
+            <a href="{{ url_for('batch_folders') }}" class="card-link">
+                <div class="card-action glow quick-card quick-card-blue">
+    <i class="fa-solid fa-folder-tree fa-2x card-icon"></i>
+    <h3>Batch Folders</h3>
+</div>
 
             <a href="{{ url_for('classify') }}" class="card-link">
                 <div class="card-action glow quick-card quick-card-cyan">
@@ -464,6 +776,54 @@
     element.classList.toggle("sensor-disconnected", !connected);
   }
 
+  function getTemperatureStatus(value) {
+    const numeric = Number(
+      String(value ?? "")
+        .replace(/[^0-9.-]/g, "")
+    );
+
+    if (!Number.isFinite(numeric)) {
+      return "UNKNOWN";
+    }
+
+    if (numeric <= 22) {
+      return "COLD";
+    }
+
+    if (numeric <= 28) {
+      return "NORMAL";
+    }
+
+    return "HOT";
+  }
+
+  function updateTemperatureStatusBadge(element, status) {
+    if (!element) return;
+
+    const normalized = String(
+      status || "UNKNOWN"
+    ).trim().toUpperCase();
+
+    element.textContent = normalized;
+
+    element.classList.remove(
+      "temperature-cold",
+      "temperature-normal",
+      "temperature-hot",
+      "temperature-unknown"
+    );
+
+    if (normalized === "COLD") {
+      element.classList.add("temperature-cold");
+    } else if (normalized === "NORMAL") {
+      element.classList.add("temperature-normal");
+    } else if (normalized === "HOT") {
+      element.classList.add("temperature-hot");
+    } else {
+      element.classList.add("temperature-unknown");
+    }
+  }
+
   function applySensorData(data) {
     const status = data["Status"] || "Not connected";
     const boardConnected = String(status)
@@ -485,16 +845,22 @@
     const phConnectionEl = document.getElementById("phSensorConnection");
     const waterConnectionEl = document.getElementById("waterLevelSensorConnection");
     const turbidityConnectionEl = document.getElementById("turbiditySensorConnection");
+    const temperatureConnectionEl = document.getElementById("temperatureSensorConnection");
 
     const rawPh = data["pH Level"];
     const phStatus = data["pH Status"] || "Unknown";
     const phSensorStatus = data["pH Sensor Status"] || "Disconnected";
     const waterSensorStatus = data["Water Level Sensor Status"] || "Disconnected";
     const turbiditySensorStatus = data["Turbidity Sensor Status"] || "Disconnected";
+    const temperatureSensorStatus = data["Temperature Sensor Status"]
+      || (data["Temperature"] !== undefined && data["Temperature"] !== "—"
+        ? "Connected"
+        : "Disconnected");
 
     updateSensorConnection(phConnectionEl, phSensorStatus);
     updateSensorConnection(waterConnectionEl, waterSensorStatus);
     updateSensorConnection(turbidityConnectionEl, turbiditySensorStatus);
+    updateSensorConnection(temperatureConnectionEl, temperatureSensorStatus);
 
     if (phEl) {
       phEl.textContent = String(phSensorStatus).toLowerCase() === "connected"
@@ -516,6 +882,8 @@
     const wlEl = document.getElementById("waterLevelValue");
     const wlsEl = document.getElementById("waterLevelStatus");
     const waterQualityEl = document.getElementById("waterQualityValue");
+    const temperatureEl = document.getElementById("temperatureValue");
+    const temperatureStatusEl = document.getElementById("temperatureStatus");
 
     if (wlEl) {
       wlEl.textContent = String(waterSensorStatus).toLowerCase() === "connected"
@@ -533,6 +901,40 @@
       waterQualityEl.textContent = String(turbiditySensorStatus).toLowerCase() === "connected"
         ? String(data["Water Quality"] || "—").toUpperCase()
         : "—";
+    }
+
+    if (temperatureEl || temperatureStatusEl) {
+      const temperatureConnected =
+        String(
+          temperatureSensorStatus
+        ).toLowerCase() === "connected";
+
+      const rawTemperature = data["Temperature"];
+
+      const derivedTemperatureStatus =
+        data["Temperature Status"]
+        || getTemperatureStatus(rawTemperature);
+
+      if (temperatureEl) {
+        temperatureEl.textContent = temperatureConnected
+          ? (
+              rawTemperature !== undefined
+              && rawTemperature !== null
+              && rawTemperature !== "—"
+                ? `${rawTemperature} °C`
+                : "—"
+            )
+          : "—";
+      }
+
+      if (temperatureStatusEl) {
+        updateTemperatureStatusBadge(
+          temperatureStatusEl,
+          temperatureConnected
+            ? derivedTemperatureStatus
+            : "UNKNOWN"
+        );
+      }
     }
 
     const alertLevelEl = document.getElementById("alertLevel");
@@ -665,9 +1067,11 @@
     const currentWL = document.getElementById("waterLevelValue")?.textContent ?? "";
     const currentWLStatus = document.getElementById("waterLevelStatus")?.textContent ?? "";
     const currentWaterQuality = document.getElementById("waterQualityValue")?.textContent ?? "";
+    const currentTemperature = document.getElementById("temperatureValue")?.textContent ?? "";
+    const currentTemperatureStatus = document.getElementById("temperatureStatus")?.textContent ?? "";
 
     let csv = "";
-    csv += "timestamp_iso,last_updated_seconds_ago,arduino_status,ph_level,ph_status,water_level,water_level_status,water_quality\n";
+    csv += "timestamp_iso,last_updated_seconds_ago,arduino_status,ph_level,ph_status,water_level,water_level_status,water_quality,temperature,temperature_status\n";
     csv += [
       stampISO,
       secsAgo,
@@ -676,7 +1080,9 @@
       String(currentPHStatus).replace(/,/g, " "),
       String(currentWL).replace(/,/g, " "),
       String(currentWLStatus).replace(/,/g, " "),
-      String(currentWaterQuality).replace(/,/g, " ")
+      String(currentWaterQuality).replace(/,/g, " "),
+      String(currentTemperature).replace(/,/g, " "),
+      String(currentTemperatureStatus).replace(/,/g, " ")
     ].join(",") + "\n\n";
 
     csv += "ph_time,ph\n";
@@ -854,6 +1260,54 @@
     background: linear-gradient(to bottom, #625b45, #fda085);
   }
 
+  .temperature-card::before {
+    background: linear-gradient(to bottom, #38bdf8, #f97316);
+  }
+
+  .temperature-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .temperature-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 11px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .4px;
+    border: 1px solid transparent;
+  }
+
+  .temperature-cold {
+    color: #1d4ed8;
+    background: rgba(59, 130, 246, .13);
+    border-color: rgba(59, 130, 246, .25);
+  }
+
+  .temperature-normal {
+    color: #157347;
+    background: rgba(25, 135, 84, .13);
+    border-color: rgba(25, 135, 84, .25);
+  }
+
+  .temperature-hot {
+    color: #b02a37;
+    background: rgba(220, 53, 69, .13);
+    border-color: rgba(220, 53, 69, .25);
+  }
+
+  .temperature-unknown {
+    color: #64748b;
+    background: rgba(100, 116, 139, .10);
+    border-color: rgba(100, 116, 139, .20);
+  }
+
   .level-card::before {
     background: linear-gradient(to bottom, #60a5fa, #2563eb);
   }
@@ -1004,6 +1458,7 @@
     box-shadow: 0 12px 24px rgba(0,0,0,0.2);
   }
 
+ 
   .quick-card h3 {
     margin-top: 10px;
     font-size: 14px;
@@ -1119,6 +1574,99 @@
     }
   }
 
+  .weekly-growth-grid {
+    margin-top: 16px;
+  }
+
+  .weekly-growth-card::before {
+    background: linear-gradient(to bottom, #22c55e, #0f766e);
+  }
+
+  .weekly-growth-main {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .weekly-growth-metric {
+    padding: 11px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .weekly-growth-metric span,
+  .weekly-growth-stage span,
+  .weekly-growth-status-row > span:first-child {
+    font-size: 12px;
+    opacity: 0.75;
+    font-weight: 700;
+  }
+
+  .weekly-growth-metric strong {
+    font-size: 16px;
+  }
+
+  .weekly-growth-stage,
+  .weekly-growth-status-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.06);
+  }
+
+  .weekly-growth-status {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+  }
+
+  .weekly-status-normal {
+    color: #157347;
+    background: rgba(25,135,84,0.13);
+    border: 1px solid rgba(25,135,84,0.25);
+  }
+
+  .weekly-status-slow {
+    color: #b02a37;
+    background: rgba(220,53,69,0.13);
+    border: 1px solid rgba(220,53,69,0.25);
+  }
+
+  .weekly-status-stable {
+    color: #8a5a00;
+    background: rgba(245,158,11,0.14);
+    border: 1px solid rgba(245,158,11,0.28);
+  }
+
+  .weekly-status-unknown {
+    opacity: 0.8;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  .weekly-growth-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  @media (max-width: 700px) {
+    .weekly-growth-main {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .individual-sensor-status {
     display: inline-flex;
     align-items: center;
@@ -1140,6 +1688,363 @@
     color: #b02a37;
     background: rgba(220, 53, 69, 0.13);
     border: 1px solid rgba(220, 53, 69, 0.25);
+  }
+
+
+  /* =========================================
+     DASHBOARD HERO
+     ========================================= */
+  .dashboard-hero {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: left;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dashboard-hero::after {
+    content: "";
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    right: -90px;
+    top: -110px;
+    border-radius: 50%;
+    background: rgba(15,127,122,.08);
+    pointer-events: none;
+  }
+
+  .dashboard-hero-icon {
+    width: 62px;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(15,127,122,.18), rgba(22,160,133,.08));
+    color: #0f7f7a;
+    font-size: 26px;
+    border: 1px solid rgba(15,127,122,.18);
+  }
+
+  .dashboard-hero-copy {
+    min-width: 0;
+  }
+
+  .dashboard-hero-eyebrow,
+  .weekly-growth-eyebrow {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    color: #0f7f7a;
+    opacity: .85;
+  }
+
+  .dashboard-hero-copy h1 {
+    margin: 0;
+    font-size: clamp(1.7rem, 3vw, 2.35rem);
+    line-height: 1.08;
+  }
+
+  .dashboard-hero-copy p {
+    margin: 7px 0 0;
+    max-width: 700px;
+    font-size: 13px;
+    line-height: 1.55;
+    opacity: .76;
+  }
+
+  .dashboard-hero-badge {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    background: rgba(25,135,84,.10);
+    border: 1px solid rgba(25,135,84,.20);
+    color: #157347;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  /* =========================================
+     WEEKLY BATCH GROWTH
+     ========================================= */
+  .weekly-growth-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .weekly-growth-header-icon {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: 15px;
+    background: rgba(15,127,122,.10);
+    color: #0f7f7a;
+    font-size: 20px;
+  }
+
+  .weekly-growth-header-copy h2 {
+    margin: 0;
+  }
+
+  .weekly-growth-header-copy p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    opacity: .72;
+  }
+
+  .weekly-growth-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 16px;
+    margin-top: 0;
+  }
+
+  .weekly-batch-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 17px;
+    border-radius: 18px;
+    background: linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.045));
+    border: 1px solid rgba(255,255,255,.11);
+    box-shadow: 0 9px 22px rgba(0,0,0,.12);
+  }
+
+  .weekly-batch-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .weekly-batch-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .weekly-batch-icon {
+    width: 41px;
+    height: 41px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(15,127,122,.10);
+    color: #0f7f7a;
+  }
+
+  .weekly-batch-name span {
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    opacity: .58;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+  }
+
+  .weekly-batch-name h3 {
+    margin: 2px 0 0;
+    font-size: 16px;
+  }
+
+  .weekly-week-badge {
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(15,127,122,.10);
+    border: 1px solid rgba(15,127,122,.18);
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .weekly-stat-box-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .weekly-stat-box {
+    min-width: 0;
+    padding: 12px;
+    border-radius: 13px;
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.07);
+  }
+
+  .weekly-stat-icon {
+    margin-bottom: 8px;
+    color: #0f7f7a;
+    font-size: 14px;
+  }
+
+  .weekly-stat-box span {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    opacity: .66;
+  }
+
+  .weekly-stat-box strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 17px;
+  }
+
+  .weekly-detail-boxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .weekly-detail-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 13px;
+    background: rgba(255,255,255,.055);
+  }
+
+  .weekly-detail-box > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    opacity: .68;
+  }
+
+  .weekly-growth-status {
+    align-self: flex-start;
+  }
+
+  .weekly-batch-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 2px;
+  }
+
+  .weekly-growth-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin: 0;
+    padding: 9px 13px;
+    border-radius: 11px;
+    color: #fff !important;
+    text-decoration: none !important;
+    font-size: 11px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #0f7f7a, #159f91);
+    box-shadow: 0 6px 14px rgba(15,127,122,.16);
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+
+  .weekly-growth-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 9px 18px rgba(15,127,122,.24);
+  }
+
+  .weekly-empty-panel {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px;
+    border-radius: 15px;
+    background: rgba(255,255,255,.07);
+  }
+
+  .weekly-empty-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: 14px;
+    background: rgba(15,127,122,.10);
+    color: #0f7f7a;
+    font-size: 19px;
+  }
+
+  .weekly-empty-panel h3,
+  .weekly-empty-panel p {
+    margin: 0;
+  }
+
+  .weekly-empty-panel p {
+    margin-top: 4px;
+    font-size: 13px;
+    opacity: .7;
+  }
+
+  @media (max-width: 720px) {
+    .dashboard-hero {
+      grid-template-columns: auto 1fr;
+    }
+
+    .dashboard-hero-badge {
+      grid-column: 1 / -1;
+      justify-self: flex-start;
+    }
+
+    .weekly-stat-box-grid,
+    .weekly-detail-boxes {
+      grid-template-columns: 1fr;
+    }
+  }
+
+
+
+  .weekly-live-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-radius: 13px;
+    background: rgba(15,127,122,.065);
+    border: 1px solid rgba(15,127,122,.10);
+  }
+
+  .weekly-live-status-row > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .weekly-live-status-label,
+  .weekly-confidence-box span {
+    font-size: 10px;
+    font-weight: 700;
+    opacity: .66;
+  }
+
+  .weekly-live-status-row strong {
+    font-size: 13px;
+  }
+
+  .weekly-confidence-box {
+    text-align: right;
   }
 
 </style>
