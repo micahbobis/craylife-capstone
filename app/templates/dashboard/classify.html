@@ -60,13 +60,7 @@
                         type="button"
                         class="mode-btn active"
                         id="quickModeBtn"
-                        const presetMode = "{{ preset_mode or 'quick' }}";
-
-setClassificationMode(
-    presetMode === "batch"
-        ? "batch"
-        : "quick"
-);
+                        onclick="setClassificationMode('quick')"
                     >
                         <i class="fa-solid fa-bolt"></i>
                         <span>
@@ -510,7 +504,13 @@ function setClassificationMode(mode) {
 }
 
 document.addEventListener("DOMContentLoaded", function () {
-    setClassificationMode("quick");
+    const presetMode = "{{ preset_mode or 'quick' }}";
+
+    setClassificationMode(
+        presetMode === "batch"
+            ? "batch"
+            : "quick"
+    );
 
     const form = document.getElementById("classifyForm");
     const submitBtn = document.getElementById("classifySubmitBtn");
