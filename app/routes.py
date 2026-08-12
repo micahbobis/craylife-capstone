@@ -1430,30 +1430,7 @@ print("Gender exists:", os.path.exists(GENDER_MODEL_PATH))
 print("Growth exists:", os.path.exists(GROWTH_MODEL_PATH))
 print("=== MODEL DEBUG END ===")
 
-gender_model = None
-growth_model = None
 
-
-def get_models():
-    global gender_model, growth_model
-
-    if gender_model is None:
-        print("[MODEL] Loading gender model...")
-        gender_model = load_model(
-            GENDER_MODEL_PATH,
-            compile=False
-        )
-        print("[OK] Gender model loaded")
-
-    if growth_model is None:
-        print("[MODEL] Loading growth model...")
-        growth_model = load_model(
-            GROWTH_MODEL_PATH,
-            compile=False
-        )
-        print("[OK] Growth model loaded")
-
-    return gender_model, growth_model
 # =========================================================
 # IMAGE PREPROCESSING
 # SAME SA TRAINING SAMPLE MO:
@@ -1472,56 +1449,152 @@ def preprocess_image_from_bytes(img_bytes):
 # =========================================================
 def classify_crayfish(img_bytes):
     try:
-        gender_model, growth_model = get_models()
-
         img_array = preprocess_image_from_bytes(img_bytes)
 
-        # =========================
-        # GENDER PREDICTION
-        # binary threshold based sa sample mo:
-        # if prediction[0][0] > 0.5 => Male
-        # else => Female
-        # =========================
-        gender_prediction = gender_model.predict(img_array, verbose=0)
-        gender_raw_value = float(gender_prediction[0][0])
+        # =========================================
+        # GENDER MODEL - LOAD, PREDICT, RELEASE
+        # =========================================
+        print("[MODEL] Loading gender model...", flush=True)
+
+        gender_model = load_model(
+            GENDER_MODEL_PATH,
+            compile=False
+        )
+
+        gender_prediction = gender_model.predict(
+            img_array,
+            verbose=0
+        )
+
+        gender_raw_value = float(
+            gender_prediction[0][0]
+        )
 
         if gender_raw_value > 0.5:
-         gender_label = GENDER_LABELS[1]
-         gender_confidence = gender_raw_value * 100.0
+            gender_label = "Male"
+            gender_confidence = (
+                gender_raw_value * 100.0
+            )
         else:
-         gender_label = GENDER_LABELS[0]
-         gender_confidence = (1.0 - gender_raw_value) * 100.0
+            gender_label = "Female"
+            gender_confidence = (
+                (1.0 - gender_raw_value) * 100.0
+            )
 
-        # =========================
-        # GROWTH PREDICTION
-        # multiclass argmax based sa sample mo
-        # =========================
-        growth_prediction = growth_model.predict(img_array, verbose=0)
-        growth_class_index = int(np.argmax(growth_prediction[0]))
-        growth_label = GROWTH_LABELS[growth_class_index]
-        growth_confidence = float(growth_prediction[0][growth_class_index]) * 100.0
+        del gender_model
+        tf.keras.backend.clear_session()
 
-        # Existing contour-based estimate mo
-        extra_growth = estimate_length_and_growth_stage(img_bytes)
+        print("[MODEL] Gender model released", flush=True)
+
+
+        # =========================================
+        # GROWTH MODEL - LOAD, PREDICT, RELEASE
+        # =========================================
+        print("[MODEL] Loading growth model...", flush=True)
+
+        growth_model = load_model(
+            GROWTH_MODEL_PATH,
+            compile=False
+        )
+
+        growth_prediction = growth_model.predict(
+            img_array,
+            verbose=0
+        )
+
+        growth_class_index = int(
+            np.argmax(growth_prediction[0])
+        )
+
+        growth_label = GROWTH_LABELS[
+            growth_class_index
+        ]
+
+        growth_confidence = (
+            float(
+                growth_prediction[0][
+                    growth_class_index
+                ]
+            )
+            * 100.0
+        )
+
+        growth_raw_probs = [
+            round(float(x), 6)
+            for x in growth_prediction[0].tolist()
+        ]
+
+        del growth_model
+        tf.keras.backend.clear_session()
+
+        print("[MODEL] Growth model released", flush=True)
+
+
+        # =========================================
+        # LENGTH / STAGE ESTIMATE
+        # =========================================
+        extra_growth = (
+            estimate_length_and_growth_stage(
+                img_bytes
+            )
+        )
+
 
         return {
             "gender": gender_label,
-            "gender_confidence": round(gender_confidence, 2),
-            "gender_raw_value": round(gender_raw_value, 6),
+
+            "gender_confidence": round(
+                gender_confidence,
+                2
+            ),
+
+            "gender_raw_value": round(
+                gender_raw_value,
+                6
+            ),
 
             "growth": growth_label,
-            "growth_confidence": round(growth_confidence, 2),
-            "growth_raw_probs": [round(float(x), 6) for x in growth_prediction[0].tolist()],
 
-            "estimated_length_cm": extra_growth.get("estimated_length_cm", "Unknown"),
-            "estimated_growth_stage": extra_growth.get("growth_stage", "Unknown"),
-            "growth_debug": extra_growth.get("debug", "")
+            "growth_confidence": round(
+                growth_confidence,
+                2
+            ),
+
+            "growth_raw_probs": (
+                growth_raw_probs
+            ),
+
+            "estimated_length_cm": (
+                extra_growth.get(
+                    "estimated_length_cm",
+                    "Unknown"
+                )
+            ),
+
+            "estimated_growth_stage": (
+                extra_growth.get(
+                    "growth_stage",
+                    "Unknown"
+                )
+            ),
+
+            "growth_debug": (
+                extra_growth.get(
+                    "debug",
+                    ""
+                )
+            )
         }
 
-    except Exception as e:
+    except Exception as error:
         traceback.print_exc()
-        return {"error": f"Classification failed: {str(e)}"}
 
+        tf.keras.backend.clear_session()
+
+        return {
+            "error":
+                f"Classification failed: {str(error)}"
+        }
 
 # =========================================================
 # CLASSIFY ROUTE
