@@ -20,9 +20,6 @@ from app.utils import get_arduino_data
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask import jsonify
 from app.db_save import save_classification_log
-from app.models import ClassificationLog
-from app import app
-
 
 def send_email_verification(user, new_email):
     token = serializer.dumps(new_email, salt='email-change')
@@ -185,6 +182,14 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+@app.before_request
+def log_request():
+    print(
+        f"[REQUEST] {request.method} {request.path}",
+        flush=True
+    )
 
 
 @app.route("/esp32-data", methods=["POST"])
@@ -856,23 +861,58 @@ def reports():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     form = LoginForm()
-    print(f"Form validated: {form.validate_on_submit()}")
-    print(f"Form errors: {form.errors}")
+
+    if request.method == 'POST':
+        print("[LOGIN] POST received", flush=True)
 
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
-        print(f"User found: {user}")
-        if user:
-            print(f"Password check: {user.check_password(form.password.data)}")
-        if user and user.check_password(form.password.data):
-            session['user_id'] = user.id
-            session['username'] = user.username
-            flash('Login successful!', 'success')
-            return redirect(url_for('home'))
-        else:
+        try:
+            user = User.query.filter_by(
+                username=form.username.data
+            ).first()
+
+            print(
+                f"[LOGIN] user_found={user is not None}",
+                flush=True
+            )
+
+            if user and user.check_password(form.password.data):
+                session.clear()
+                session['user_id'] = user.id
+                session['username'] = user.username
+
+                flash('Login successful!', 'success')
+
+                print(
+                    f"[LOGIN] success user_id={user.id}; redirecting to home",
+                    flush=True
+                )
+
+                return redirect(url_for('home'))
+
+            print("[LOGIN] invalid credentials", flush=True)
             flash('Invalid username or password', 'danger')
 
-    return render_template('auth/login.html', form=form)
+        except Exception:
+            print("[LOGIN] unexpected error", flush=True)
+            traceback.print_exc()
+            db.session.rollback()
+
+            flash(
+                'A server error occurred while signing in. Please try again.',
+                'danger'
+            )
+
+    elif request.method == 'POST':
+        print(
+            f"[LOGIN] validation errors={form.errors}",
+            flush=True
+        )
+
+    return render_template(
+        'auth/login.html',
+        form=form
+    )
 
 
 @app.route('/register', methods=['GET', 'POST'])
