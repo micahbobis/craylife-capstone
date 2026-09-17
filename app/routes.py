@@ -92,10 +92,15 @@ def to_ph_time(value):
     return None
 
 
+def _format_ph_time(value, fmt="%b %d, %Y %I:%M %p", fallback="—"):
+    """Safely format datetime/date/string values in Philippine time."""
+    local_time = to_ph_time(value)
+    return local_time.strftime(fmt) if local_time else fallback
+
+
 @app.template_filter("ph_time")
 def ph_time_filter(value, fmt="%b %d, %Y %I:%M %p"):
-    local_time = to_ph_time(value)
-    return local_time.strftime(fmt) if local_time else "—"
+    return _format_ph_time(value, fmt, "—")
 
 # =========================================================
 # 14-DAY GROWTH TRACKING
@@ -846,7 +851,7 @@ Latest Estimated Length: {latest_length}
 Growth Status: {status}
 
 Next Check:
-{to_ph_time(next_check_date).strftime('%B %d, %Y') if next_check_date else 'Not available'}
+{_format_ph_time(next_check_date, '%B %d, %Y', 'Not available')}
 
 NEXT ACTION
 Upload a new batch observation when the scheduled growth verification
@@ -1570,12 +1575,11 @@ def home():
             }
 
             for log in reversed(growth_logs):
-                if log.created_at:
-                    label = to_ph_time(log.created_at).strftime(
-                        "%b %d %I:%M %p"
-                    )
-                else:
-                    label = "Unknown"
+                label = _format_ph_time(
+                    log.created_at,
+                    "%b %d %I:%M %p",
+                    "Unknown"
+                )
 
                 growth_chart_labels.append(
                     label
@@ -1784,9 +1788,11 @@ def home():
 
             for ref in official_references:
                 chart_labels.append(
-                    to_ph_time(ref.created_at).strftime('%b %d')
-                    if ref.created_at
-                    else 'Unknown'
+                    _format_ph_time(
+                        ref.created_at,
+                        '%b %d',
+                        'Unknown'
+                    )
                 )
 
                 chart_actual.append(
