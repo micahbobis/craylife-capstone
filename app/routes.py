@@ -74,10 +74,44 @@ def _days_between(start_dt, end_dt):
     if not start_dt or not end_dt:
         return None
 
-    return max(
-        0,
-        (end_dt.date() - start_dt.date()).days
-    )
+    def normalize_datetime(value):
+        if isinstance(value, datetime):
+            return value
+
+        if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+            return datetime(value.year, value.month, value.day)
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            formats = [
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M:%S.%f",
+                "%Y-%m-%d",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%f",
+            ]
+
+            for fmt in formats:
+                try:
+                    return datetime.strptime(value, fmt)
+                except ValueError:
+                    continue
+
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+
+        return None
+
+    start_dt = normalize_datetime(start_dt)
+    end_dt = normalize_datetime(end_dt)
+
+    if not start_dt or not end_dt:
+        return None
+
+    return max(0, (end_dt.date() - start_dt.date()).days)
 
 
 def _get_official_growth_references(observations):
