@@ -204,3 +204,66 @@ class BatchGrowthRecord(db.Model):
         "Batch",
         backref="growth_records"
     )
+    
+class AdminReportSetting(db.Model):
+    __tablename__ = "admin_report_setting"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    admin_email = db.Column(
+        db.String(255),
+        nullable=False
+    )
+
+    sensor_alerts_enabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True
+    )
+
+    growth_alerts_enabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True
+    )
+
+    daily_summary_enabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    last_daily_summary_date = db.Column(
+        db.Date,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
+
+    user = db.relationship(
+        "User",
+        backref=db.backref(
+            "admin_report_setting",
+            uselist=False,
+            cascade="all, delete-orphan"
+        )
+    )

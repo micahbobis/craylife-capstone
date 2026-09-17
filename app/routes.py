@@ -1,7 +1,7 @@
 from flask import render_template, redirect, url_for, flash, request, session
 from app import app, db, csrf, mail, serializer, socketio
 from app.forms import LoginForm, RegistrationForm, BatchForm, RequestResetForm, ResetPasswordForm
-from app.models import User, Batch, Inventory, Sale, ActivityLog, ClassificationLog, BatchGrowthRecord, MonitoringAlert
+from app.models import User, Batch, Inventory, Sale, ActivityLog, ClassificationLog, BatchGrowthRecord, MonitoringAlert, AdminReportSetting
 from functools import wraps
 from flask_mail import Message
 import secrets
@@ -426,16 +426,8 @@ def _log_monitoring_alert_once(sensor_type, value, message, cooldown_minutes=5):
 
 # =========================================================
 # ADMIN REPORT NOTIFICATION HELPERS
-# Persistent, user-specific settings + once-daily summary
+# AIVEN / DATABASE-BACKED SETTINGS
 # =========================================================
-
-ADMIN_REPORT_SETTINGS_FILE = os.path.abspath(
-    os.path.join(
-        app.root_path,
-        "..",
-        "admin_report_settings.json"
-    )
-)
 
 DAILY_SUMMARY_HOUR_PH = 8
 DAILY_SUMMARY_MINUTE_PH = 0
@@ -444,103 +436,88 @@ _daily_summary_thread_started = False
 _daily_summary_thread_lock = threading.Lock()
 
 
-def _load_all_admin_report_preferences():
-    if not os.path.exists(ADMIN_REPORT_SETTINGS_FILE):
-        return {}
-
-    try:
-        with open(
-            ADMIN_REPORT_SETTINGS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as settings_file:
-            data = json.load(settings_file)
-
-        return data if isinstance(data, dict) else {}
-
-    except Exception as error:
-        print(
-            "[ADMIN REPORT SETTINGS LOAD ERROR]",
-            error,
-            flush=True
-        )
-        return {}
-
-
-def _save_all_admin_report_preferences(data):
-    try:
-        temp_path = ADMIN_REPORT_SETTINGS_FILE + ".tmp"
-
-        with open(
-            temp_path,
-            "w",
-            encoding="utf-8"
-        ) as settings_file:
-            json.dump(
-                data,
-                settings_file,
-                indent=4
-            )
-
-        os.replace(
-            temp_path,
-            ADMIN_REPORT_SETTINGS_FILE
-        )
-
-        return True
-
-    except Exception as error:
-        print(
-            "[ADMIN REPORT SETTINGS SAVE ERROR]",
-            error,
-            flush=True
-        )
-        return False
-
-
-def _get_admin_report_preferences(user_id=None, user_email=None):
+def _get_or_create_admin_report_setting(user_id, user_email=None):
     """
-    Return persistent report-notification preferences for one user.
+    Get one user's persistent notification settings from MySQL/Aiven.
     """
-    if user_id is None:
-        user_id = session.get("user_id")
-
-    data = _load_all_admin_report_preferences()
-
-    key = str(user_id) if user_id is not None else None
-
-    saved = (
-        data.get(key, {})
-        if key is not None
-        else {}
+    setting = (
+        AdminReportSetting.query
+        .filter_by(user_id=user_id)
+        .first()
     )
+
+    if setting:
+        return setting
+
+    user = User.query.get(user_id)
 
     default_email = (
         user_email
-        or session.get("user_email")
+        or (user.email if user else None)
         or app.config.get("MAIL_USERNAME")
         or ""
     )
 
+    setting = AdminReportSetting(
+        user_id=user_id,
+        admin_email=default_email,
+        sensor_alerts_enabled=True,
+        growth_alerts_enabled=True,
+        daily_summary_enabled=False
+    )
+
+    db.session.add(setting)
+
+    try:
+        db.session.commit()
+        return setting
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def _get_admin_report_preferences(user_id=None, user_email=None):
+    """
+    Return database-backed admin-report preferences for one user.
+    """
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    if not user_id:
+        return {
+            "admin_email": user_email or app.config.get("MAIL_USERNAME") or "",
+            "sensor_alerts": "yes",
+            "growth_alerts": "yes",
+            "daily_summary": "no",
+            "last_daily_summary_date": None
+        }
+
+    setting = _get_or_create_admin_report_setting(
+        user_id=user_id,
+        user_email=user_email
+    )
+
     return {
-        "admin_email": saved.get(
-            "admin_email",
-            default_email
-        ),
-        "sensor_alerts": saved.get(
-            "sensor_alerts",
+        "admin_email": setting.admin_email or "",
+        "sensor_alerts": (
             "yes"
+            if setting.sensor_alerts_enabled
+            else "no"
         ),
-        "growth_alerts": saved.get(
-            "growth_alerts",
+        "growth_alerts": (
             "yes"
+            if setting.growth_alerts_enabled
+            else "no"
         ),
-        "daily_summary": saved.get(
-            "daily_summary",
-            "no"
+        "daily_summary": (
+            "yes"
+            if setting.daily_summary_enabled
+            else "no"
         ),
-        "last_daily_summary_date": saved.get(
-            "last_daily_summary_date"
+        "last_daily_summary_date": (
+            setting.last_daily_summary_date.isoformat()
+            if setting.last_daily_summary_date
+            else None
         )
     }
 
@@ -552,34 +529,76 @@ def _save_admin_report_preferences(
     growth_alerts,
     daily_summary
 ):
-    data = _load_all_admin_report_preferences()
-    key = str(user_id)
-
-    existing = data.get(key, {})
-
-    data[key] = {
-        "admin_email": admin_email,
-        "sensor_alerts": sensor_alerts,
-        "growth_alerts": growth_alerts,
-        "daily_summary": daily_summary,
-        "last_daily_summary_date": existing.get(
-            "last_daily_summary_date"
+    """
+    Persist Settings page notification preferences to Aiven/MySQL.
+    """
+    try:
+        setting = _get_or_create_admin_report_setting(
+            user_id=user_id,
+            user_email=admin_email
         )
-    }
 
-    return _save_all_admin_report_preferences(data)
+        setting.admin_email = admin_email
+        setting.sensor_alerts_enabled = (
+            sensor_alerts == "yes"
+        )
+        setting.growth_alerts_enabled = (
+            growth_alerts == "yes"
+        )
+        setting.daily_summary_enabled = (
+            daily_summary == "yes"
+        )
+        setting.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        return True
+
+    except Exception as error:
+        db.session.rollback()
+
+        print(
+            "[ADMIN REPORT SETTINGS SAVE ERROR]",
+            error,
+            flush=True
+        )
+
+        return False
 
 
 def _mark_daily_summary_sent(user_id, date_key):
-    data = _load_all_admin_report_preferences()
-    key = str(user_id)
+    """
+    Persist the most recent daily-summary date.
+    """
+    try:
+        setting = (
+            AdminReportSetting.query
+            .filter_by(user_id=user_id)
+            .first()
+        )
 
-    if key not in data:
+        if not setting:
+            return False
+
+        setting.last_daily_summary_date = datetime.strptime(
+            date_key,
+            "%Y-%m-%d"
+        ).date()
+
+        setting.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        return True
+
+    except Exception as error:
+        db.session.rollback()
+
+        print(
+            "[DAILY SUMMARY MARK ERROR]",
+            error,
+            flush=True
+        )
+
         return False
-
-    data[key]["last_daily_summary_date"] = date_key
-
-    return _save_all_admin_report_preferences(data)
 
 
 def _send_admin_report_email(subject, body, recipient):
@@ -616,29 +635,29 @@ def _send_admin_report_email(subject, body, recipient):
             error,
             flush=True
         )
+
         return False
 
 
 def _get_enabled_sensor_recipients():
     """
-    Return unique admin emails that have sensor alerts enabled.
+    Return unique configured admin emails with sensor alerts enabled.
     """
-    data = _load_all_admin_report_preferences()
     recipients = []
 
-    for saved in data.values():
-        if not isinstance(saved, dict):
-            continue
+    settings_rows = (
+        AdminReportSetting.query
+        .filter_by(sensor_alerts_enabled=True)
+        .all()
+    )
 
-        if saved.get("sensor_alerts", "yes") != "yes":
-            continue
-
-        email = (saved.get("admin_email") or "").strip()
+    for setting in settings_rows:
+        email = (setting.admin_email or "").strip()
 
         if email and email not in recipients:
             recipients.append(email)
 
-    # If no preferences have been saved yet, use configured mail account.
+    # Safe fallback before a user has opened Settings for the first time.
     if not recipients:
         fallback = app.config.get("MAIL_USERNAME")
 
@@ -967,17 +986,18 @@ the Craylife Monitoring System.
 
 def _daily_summary_worker():
     """
-    Check once per minute, but send at most ONE daily summary
-    per enabled user per Philippine calendar day.
+    Send at most ONE daily summary per enabled user per
+    Philippine calendar day.
 
-    If the application starts after 8:00 AM, today's unsent
-    summary is sent on the first check.
+    Render caveat:
+    This worker runs while the Render web service is awake.
+    If Render sleeps, it sends today's unsent summary after wake-up.
     """
     while True:
         try:
             with app.app_context():
                 now_ph = datetime.now(PH_TZ)
-                today_key = now_ph.strftime("%Y-%m-%d")
+                today = now_ph.date()
 
                 scheduled_time_reached = (
                     now_ph.hour > DAILY_SUMMARY_HOUR_PH
@@ -988,37 +1008,30 @@ def _daily_summary_worker():
                 )
 
                 if scheduled_time_reached:
-                    all_preferences = (
-                        _load_all_admin_report_preferences()
+                    enabled_settings = (
+                        AdminReportSetting.query
+                        .filter_by(
+                            daily_summary_enabled=True
+                        )
+                        .all()
                     )
 
-                    for user_key, saved in all_preferences.items():
-                        if not isinstance(saved, dict):
+                    for setting in enabled_settings:
+                        if (
+                            setting.last_daily_summary_date
+                            == today
+                        ):
                             continue
 
-                        if saved.get(
-                            "daily_summary",
-                            "no"
-                        ) != "yes":
-                            continue
-
-                        if saved.get(
-                            "last_daily_summary_date"
-                        ) == today_key:
-                            continue
-
-                        try:
-                            user_id = int(user_key)
-                        except (TypeError, ValueError):
-                            continue
-
-                        user = User.query.get(user_id)
+                        user = User.query.get(
+                            setting.user_id
+                        )
 
                         if not user:
                             continue
 
                         recipient = (
-                            saved.get("admin_email")
+                            setting.admin_email
                             or user.email
                         )
 
@@ -1038,7 +1051,7 @@ def _daily_summary_worker():
                         ):
                             _mark_daily_summary_sent(
                                 user.id,
-                                today_key
+                                today.strftime("%Y-%m-%d")
                             )
 
         except Exception as error:
