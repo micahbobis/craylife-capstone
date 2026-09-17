@@ -3,218 +3,989 @@
 {% block title %}Reports - Craylife{% endblock %}
 
 {% block content %}
-<div class="dashboard-container reports-page">
+<div class="dashboard-container reports-dashboard">
 
-    <!-- Page Header -->
-    <section class="panel glow dashboard-header text-center">
-        <div class="header-content">
-            <h1><i class="fa-solid fa-chart-line"></i> Crayfish Reports</h1>
-            <p>View detailed sales, batch status, and classification results.</p>
+    <section class="panel glow reports-hero">
+        <div class="reports-hero-icon">
+            <i class="fa-solid fa-chart-line"></i>
         </div>
+
+        <div class="reports-hero-copy">
+            <span class="reports-eyebrow">SYSTEM REPORTING</span>
+            <h2>Craylife Reports</h2>
+            <p>
+                Review sensor health, monitoring incidents, and batch growth
+                progress instead of duplicating ordinary record pages.
+            </p>
+        </div>
+
+        <a href="{{ url_for('download_report') }}" class="reports-download-btn">
+            <i class="fa-solid fa-download"></i>
+            Download Report
+        </a>
     </section>
 
-    <!-- Summary Cards -->
-    <section class="reports-summary">
-        <div class="stats-grid">
 
-            <!-- Total Batches -->
-            <div class="panel glow stat-card stat-card-highlight">
-                <div class="stat-card-top">
-                    <div class="stat-icon">
-                        <i class="fa-solid fa-boxes-stacked"></i>
-                    </div>
-                    <div class="stat-heading">
-                        <h3>Total Batches</h3>
-                        <span>Current production overview</span>
-                    </div>
-                </div>
+    <section class="reports-summary-grid">
 
-                <div class="stat-card-main center-content">
-                    <div class="stat-number">{{ total_batches }}</div>
-                    <div class="stat-label">
-                        Batch{{ '' if total_batches == 1 else 'es' }} in Production
-                    </div>
-                </div>
+        <div class="panel glow report-summary-card">
+            <div class="report-summary-icon">
+                <i class="fa-solid fa-microchip"></i>
             </div>
-
-            <!-- Recent Activities -->
-            <div class="panel glow stat-card">
-                <div class="stat-card-top">
-                    <div class="stat-icon">
-                        <i class="fa-solid fa-clock-rotate-left"></i>
-                    </div>
-                    <div class="stat-heading">
-                        <h3>Recent Activities</h3>
-                        <span>Latest system actions</span>
-                    </div>
-                </div>
-
-                {% if activities %}
-                <div class="card-list compact-list">
-                    {% for act in activities[:4] %}
-                    <div class="card-list-item activity-item">
-                        <div class="item-title">{{ act.action }}</div>
-                        <div class="item-meta">{{ act.timestamp.strftime('%Y-%m-%d %I:%M %p') }}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-state">No recent activities.</div>
-                {% endif %}
-            </div>
-
-            <!-- Batch Status -->
-            <div class="panel glow stat-card">
-                <div class="stat-card-top">
-                    <div class="stat-icon">
-                        <i class="fa-solid fa-warehouse"></i>
-                    </div>
-                    <div class="stat-heading">
-                        <h3>Batch Status</h3>
-                        <span>Inventory snapshot</span>
-                    </div>
-                </div>
-
-                {% if inventory_items %}
-                <div class="card-list compact-list">
-                    {% for item in inventory_items[:4] %}
-                    <div class="card-list-item item-row batch-item">
-                        <div class="item-left">
-                            <span class="item-title">{{ item.name }}</span>
-                        </div>
-                        <div class="item-right">
-                            <span class="status-badge">{{ item.quantity }} units</span>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-state">No batch yet.</div>
-                {% endif %}
-            </div>
-
-        </div>
-    </section>
-
-    <!-- Action Row -->
-    <section class="reports-actions">
-        <div class="action-bar">
-            <a href="{{ url_for('download_report') }}" class="btn btn-primary">
-                <i class="fa-solid fa-download"></i>
-                <span>Download Printable Report</span>
-            </a>
-        </div>
-    </section>
-
-    <!-- Main Records Grid -->
-   <!-- Main Records Grid -->
-<section class="reports-content-grid reports-tables-grid">
-
-    <!-- Report Records -->
-    <div class="panel glow dashboard-panel records-panel">
-        <div class="records-panel-header">
             <div>
-                <h3><i class="fa-solid fa-table-list"></i> Report Records</h3>
-                <p class="section-subtitle">General report entries and totals</p>
+                <span>Active Sensor Issues</span>
+                <strong>{{ active_sensor_issues }}</strong>
+                <small>Current abnormal conditions</small>
             </div>
-            <span class="section-meta">{{ reports|length }} total</span>
         </div>
 
-        <div class="records-table-wrap">
-            <table class="dashboard-table organized-table">
-                <thead>
-                    <tr>
-                        <th class="th-id">ID</th>
-                        <th>Report Type</th>
-                        <th class="th-result">Count / Result</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for report in reports %}
-                    <tr>
-                        <td class="td-id">
-                            <span class="id-badge">#{{ report.id }}</span>
-                        </td>
-                        <td class="td-main">
-                            <div class="main-text">{{ report.type }}</div>
-                            <div class="sub-text">Recorded report entry</div>
-                        </td>
-                        <td class="td-result">
-                            <span class="value-badge">{{ report.count }}</span>
-                        </td>
-                    </tr>
+        <div class="panel glow report-summary-card">
+            <div class="report-summary-icon">
+                <i class="fa-solid fa-folder-tree"></i>
+            </div>
+            <div>
+                <span>Tracked Batches</span>
+                <strong>{{ tracked_batch_count }}</strong>
+                <small>Batches included in growth reporting</small>
+            </div>
+        </div>
+
+        <div class="panel glow report-summary-card">
+            <div class="report-summary-icon">
+                <i class="fa-solid fa-camera"></i>
+            </div>
+            <div>
+                <span>Verification Due</span>
+                <strong>{{ verification_due_count }}</strong>
+                <small>14-day checks currently due</small>
+            </div>
+        </div>
+
+        <div class="panel glow report-summary-card">
+            <div class="report-summary-icon">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+                <span>Logged Alerts</span>
+                <strong>{{ alerts.total }}</strong>
+                <small>Stored monitoring incidents</small>
+            </div>
+        </div>
+
+    </section>
+
+
+    <section class="panel glow report-section">
+
+        <div class="report-section-header">
+            <div>
+                <span class="reports-eyebrow">CURRENT CONDITIONS</span>
+                <h3>
+                    <i class="fa-solid fa-heart-pulse"></i>
+                    Sensor Health Report
+                </h3>
+                <p>
+                    Current board and water-condition status from the latest sensor payload.
+                </p>
+            </div>
+        </div>
+
+        <div class="sensor-report-grid">
+
+            {% for sensor in sensor_rows %}
+            <div class="sensor-report-card">
+                <span>{{ sensor.name }}</span>
+                <strong>{{ sensor.value }}</strong>
+
+                <small class="
+                    sensor-report-status
+                    {% if sensor.status|string|upper in ['NORMAL','CONNECTED','GOOD','CLEAR','NEUTRAL','OK'] %}
+                        report-status-good
                     {% else %}
-                    <tr>
-                        <td colspan="3" class="empty-row text-center">
-                            No records yet.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+                        report-status-alert
+                    {% endif %}
+                ">
+                    {{ sensor.status }}
+                </small>
+            </div>
+            {% endfor %}
 
-    <!-- Classification Records -->
-    <div class="panel glow dashboard-panel records-panel">
-        <div class="records-panel-header">
+        </div>
+
+    </section>
+
+
+    <section class="reports-two-column">
+
+        <div class="panel glow report-section">
+
+            <div class="report-section-header">
+                <div>
+                    <span class="reports-eyebrow">INCIDENT HISTORY</span>
+                    <h3>
+                        <i class="fa-solid fa-bell"></i>
+                        Monitoring Alerts
+                    </h3>
+                    <p>
+                        Disconnections and abnormal sensor conditions saved for review.
+                    </p>
+                </div>
+
+                <span class="report-count-badge">
+                    {{ alerts.total }} total
+                </span>
+            </div>
+
+            {% if alerts.items %}
+
+            <div class="report-list">
+
+                {% for alert in alerts.items %}
+                <div class="report-alert-row">
+
+                    <div class="report-alert-icon">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+
+                    <div class="report-alert-copy">
+                        <strong>{{ alert.sensor_type }}</strong>
+                        <span>{{ alert.message }}</span>
+                    </div>
+
+                    <div class="report-alert-date">
+                        <strong>
+                            {{ alert.created_at|ph_time('%b %d, %Y') }}
+                        </strong>
+                        <span>
+                            {{ alert.created_at|ph_time('%I:%M %p') }}
+                        </span>
+                    </div>
+
+                </div>
+                {% endfor %}
+
+            </div>
+
+            {% else %}
+
+            <div class="report-empty-state">
+                <i class="fa-solid fa-circle-check"></i>
+                <div>
+                    <strong>No monitoring alerts recorded</strong>
+                    <span>Future sensor incidents will appear here automatically.</span>
+                </div>
+            </div>
+
+            {% endif %}
+
+
+            {% if alerts.pages > 1 %}
+            <div class="report-pagination">
+
+                {% if alerts.has_prev %}
+                <a href="{{ url_for('reports', alert_page=alerts.prev_num, growth_page=growth_page) }}">
+                    <i class="fa-solid fa-angle-left"></i>
+                </a>
+                {% endif %}
+
+                {% for p in range(1, alerts.pages + 1) %}
+                    {% if p == alerts.page %}
+                        <span class="active">{{ p }}</span>
+                    {% else %}
+                        <a href="{{ url_for('reports', alert_page=p, growth_page=growth_page) }}">
+                            {{ p }}
+                        </a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if alerts.has_next %}
+                <a href="{{ url_for('reports', alert_page=alerts.next_num, growth_page=growth_page) }}">
+                    <i class="fa-solid fa-angle-right"></i>
+                </a>
+                {% endif %}
+
+            </div>
+            {% endif %}
+
+        </div>
+
+
+        <div class="panel glow report-section">
+
+            <div class="report-section-header">
+                <div>
+                    <span class="reports-eyebrow">SYSTEM LOG</span>
+                    <h3>
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        Recent Activity
+                    </h3>
+                    <p>
+                        Latest system actions related to monitoring and management.
+                    </p>
+                </div>
+            </div>
+
+            {% if recent_activities %}
+
+            <div class="report-list">
+                {% for act in recent_activities %}
+                <div class="report-activity-row">
+
+                    <div class="report-activity-icon">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+
+                    <div class="report-alert-copy">
+                        <strong>{{ act.action }}</strong>
+                        <span>System activity</span>
+                    </div>
+
+                    <div class="report-alert-date">
+                        <strong>
+                            {{ act.timestamp|ph_time('%b %d') }}
+                        </strong>
+                        <span>
+                            {{ act.timestamp|ph_time('%I:%M %p') }}
+                        </span>
+                    </div>
+
+                </div>
+                {% endfor %}
+            </div>
+
+            {% else %}
+            <div class="report-empty-state">
+                No recent activity.
+            </div>
+            {% endif %}
+
+        </div>
+
+    </section>
+
+
+    <section class="panel glow report-section">
+
+        <div class="report-section-header">
             <div>
-                <h3><i class="fa-solid fa-fish"></i> Classification Records</h3>
-                <p class="section-subtitle">Saved image-based classification outputs</p>
+                <span class="reports-eyebrow">GROWTH PERFORMANCE</span>
+                <h3>
+                    <i class="fa-solid fa-seedling"></i>
+                    Batch Growth Report
+                </h3>
+                <p>
+                    Growth status, observation activity, and upcoming 14-day verification checks.
+                </p>
             </div>
-            <span class="section-meta">Image-based results</span>
-        </div>
 
-        <div class="records-table-wrap">
-            <table class="dashboard-table organized-table">
-                <thead>
-                    <tr>
-                        <th class="th-id">ID</th>
-                        <th>Image File</th>
-                        <th class="th-classification">Classification</th>
-                        <th class="th-date">Date</th>
-                    </tr>
-                </thead>
-               <tbody>
-    {% for log in classification_logs %}
-    <tr>
-        <td class="td-id">
-            <span class="id-badge">#{{ log.id }}</span>
-        </td>
-
-        <td class="td-main">
-            <div class="main-text">{{ log.image_filename }}</div>
-            <div class="sub-text">Uploaded image file</div>
-        </td>
-
-        <td class="td-result">
-            <span class="classification-badge">
-                {{ log.gender }} / {{ log.growth }}
+            <span class="report-count-badge">
+                {{ growth_total }} batches
             </span>
-        </td>
-
-        <td class="td-date">
-            <div class="main-text">
-                {{ log.created_at.strftime('%Y-%m-%d') }}
-            </div>
-            <div class="sub-text">
-                {{ log.created_at.strftime('%H:%M') }}
-            </div>
-        </td>
-    </tr>
-    {% else %}
-    <tr>
-        <td colspan="4" class="empty-row text-center">
-            No classification records yet.
-        </td>
-    </tr>
-    {% endfor %}
-</tbody>
-            </table>
         </div>
-    </div>
 
-</section>
+
+        {% if growth_reports %}
+
+        <div class="growth-report-list">
+
+            <div class="growth-report-head">
+                <span>Batch</span>
+                <span>Stage</span>
+                <span>Latest Length</span>
+                <span>Observations</span>
+                <span>Next Check</span>
+                <span>Status</span>
+            </div>
+
+            {% for item in growth_reports %}
+            <div class="growth-report-row">
+
+                <div class="growth-report-main">
+                    <strong>{{ item.batch_name }}</strong>
+                    {% if item.last_observation_date %}
+                    <span>
+                        Updated {{ item.last_observation_date|ph_time('%b %d, %Y') }}
+                    </span>
+                    {% else %}
+                    <span>No observation yet</span>
+                    {% endif %}
+                </div>
+
+                <div>
+                    <span class="mobile-label">Stage</span>
+                    <strong>{{ item.latest_stage }}</strong>
+                </div>
+
+                <div>
+                    <span class="mobile-label">Latest Length</span>
+                    <strong>
+                        {% if item.latest_length_cm is not none %}
+                            {{ '%.1f'|format(item.latest_length_cm) }} cm
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span class="mobile-label">Observations</span>
+                    <strong>{{ item.observation_count }}</strong>
+                </div>
+
+                <div>
+                    <span class="mobile-label">Next Check</span>
+                    <strong>
+                        {% if item.next_check_date %}
+                            {{ item.next_check_date|ph_time('%b %d') }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span class="mobile-label">Status</span>
+                    <strong class="growth-report-status">
+                        {{ item.status }}
+                    </strong>
+                </div>
+
+            </div>
+            {% endfor %}
+
+        </div>
+
+        {% else %}
+
+        <div class="report-empty-state">
+            <i class="fa-solid fa-seedling"></i>
+            <div>
+                <strong>No growth report data yet</strong>
+                <span>Create batches and add observations to generate growth reports.</span>
+            </div>
+        </div>
+
+        {% endif %}
+
+
+        {% if growth_pages > 1 %}
+        <div class="report-pagination">
+
+            {% if growth_page > 1 %}
+            <a href="{{ url_for('reports', alert_page=alerts.page, growth_page=growth_page-1) }}">
+                <i class="fa-solid fa-angle-left"></i>
+            </a>
+            {% endif %}
+
+            {% for p in range(1, growth_pages + 1) %}
+                {% if p == growth_page %}
+                    <span class="active">{{ p }}</span>
+                {% else %}
+                    <a href="{{ url_for('reports', alert_page=alerts.page, growth_page=p) }}">
+                        {{ p }}
+                    </a>
+                {% endif %}
+            {% endfor %}
+
+            {% if growth_page < growth_pages %}
+            <a href="{{ url_for('reports', alert_page=alerts.page, growth_page=growth_page+1) }}">
+                <i class="fa-solid fa-angle-right"></i>
+            </a>
+            {% endif %}
+
+        </div>
+        {% endif %}
+
+    </section>
+
+
+    <section class="panel glow reports-quote">
+        <i class="fa-solid fa-quote-left"></i>
+        <p>
+            Reports should explain system health and growth progress,
+            not simply repeat the same records found elsewhere.
+        </p>
+        <span>CRAYLIFE REPORTING</span>
+    </section>
 
 </div>
+
+
+<style>
+
+.reports-dashboard {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.reports-dashboard .panel,
+.sensor-report-card,
+.report-alert-row,
+.report-activity-row,
+.growth-report-row,
+.report-count-badge,
+.reports-download-btn,
+.report-pagination a,
+.report-pagination span {
+    border-radius: 12px;
+}
+
+.reports-hero {
+    padding: 18px;
+
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+}
+
+.reports-hero-icon {
+    width: 50px;
+    height: 50px;
+
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.09);
+    color: #0f7f7a;
+
+    font-size: 20px;
+}
+
+.reports-hero-copy {
+    min-width: 0;
+}
+
+.reports-hero-copy h2 {
+    margin: 2px 0 3px;
+}
+
+.reports-hero-copy p {
+    margin: 0;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    opacity: .74;
+}
+
+.reports-eyebrow {
+    display: inline-block;
+
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.1px;
+
+    opacity: .56;
+}
+
+.reports-download-btn {
+    min-height: 40px;
+    padding: 9px 14px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+
+    color: #fff !important;
+    text-decoration: none !important;
+
+    background: linear-gradient(135deg,#0f7f7a,#159f91);
+
+    font-size: 12px;
+    font-weight: 800;
+}
+
+
+.reports-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4,minmax(0,1fr));
+    gap: 12px;
+}
+
+.report-summary-card {
+    margin: 0;
+    padding: 15px;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    min-width: 0;
+}
+
+.report-summary-icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.08);
+    color: #0f7f7a;
+}
+
+.report-summary-card > div:last-child {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.report-summary-card span {
+    font-size: 10px;
+    font-weight: 800;
+
+    opacity: .60;
+}
+
+.report-summary-card strong {
+    font-size: 22px;
+
+    color: #0f4d4c;
+}
+
+.report-summary-card small {
+    font-size: 10px;
+
+    opacity: .62;
+}
+
+
+.report-section {
+    margin: 0;
+    padding: 18px;
+}
+
+.report-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+
+    gap: 14px;
+
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+
+    border-bottom: 1px solid rgba(15,127,122,.09);
+}
+
+.report-section-header h3 {
+    margin: 2px 0 3px;
+}
+
+.report-section-header p {
+    margin: 0;
+
+    font-size: 12px;
+    line-height: 1.45;
+
+    opacity: .68;
+}
+
+.report-count-badge {
+    padding: 6px 9px;
+
+    background: rgba(15,127,122,.06);
+    border: 1px solid rgba(15,127,122,.09);
+
+    font-size: 10px;
+    font-weight: 800;
+}
+
+
+.sensor-report-grid {
+    display: grid;
+    grid-template-columns: repeat(5,minmax(0,1fr));
+    gap: 10px;
+}
+
+.sensor-report-card {
+    min-width: 0;
+
+    padding: 12px;
+
+    background: rgba(15,127,122,.035);
+    border: 1px solid rgba(15,127,122,.08);
+
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.sensor-report-card > span {
+    font-size: 10px;
+    font-weight: 800;
+    opacity: .60;
+}
+
+.sensor-report-card > strong {
+    font-size: 16px;
+    overflow-wrap: anywhere;
+}
+
+.sensor-report-status {
+    width: fit-content;
+
+    margin-top: 3px;
+    padding: 3px 6px;
+
+    border-radius: 8px;
+
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.report-status-good {
+    color: #157347;
+    background: rgba(25,135,84,.12);
+}
+
+.report-status-alert {
+    color: #b02a37;
+    background: rgba(220,53,69,.12);
+}
+
+
+.reports-two-column {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 16px;
+    align-items: stretch;
+}
+
+.reports-two-column > .report-section {
+    height: 100%;
+    box-sizing: border-box;
+}
+
+
+.report-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.report-alert-row,
+.report-activity-row {
+    min-width: 0;
+
+    padding: 9px 10px;
+
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr) auto;
+    align-items: center;
+    gap: 10px;
+
+    background: rgba(15,127,122,.035);
+    border: 1px solid rgba(15,127,122,.08);
+}
+
+.report-alert-icon,
+.report-activity-icon {
+    width: 34px;
+    height: 34px;
+
+    border-radius: 10px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.08);
+    color: #0f7f7a;
+}
+
+.report-alert-copy,
+.report-alert-date {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.report-alert-copy strong,
+.report-alert-date strong {
+    font-size: 11px;
+
+    overflow-wrap: anywhere;
+}
+
+.report-alert-copy span,
+.report-alert-date span {
+    font-size: 9px;
+
+    opacity: .58;
+}
+
+.report-alert-date {
+    align-items: flex-end;
+}
+
+
+.growth-report-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.growth-report-head,
+.growth-report-row {
+    display: grid;
+    grid-template-columns:
+        minmax(160px,1.2fr)
+        minmax(110px,.8fr)
+        minmax(100px,.7fr)
+        minmax(80px,.5fr)
+        minmax(100px,.7fr)
+        minmax(120px,.8fr);
+
+    gap: 10px;
+    align-items: center;
+}
+
+.growth-report-head {
+    padding: 0 10px 3px;
+
+    font-size: 9px;
+    font-weight: 900;
+
+    opacity: .50;
+}
+
+.growth-report-row {
+    min-height: 58px;
+
+    padding: 9px 10px;
+
+    background: rgba(15,127,122,.035);
+    border: 1px solid rgba(15,127,122,.08);
+}
+
+.growth-report-row > div {
+    min-width: 0;
+}
+
+.growth-report-row strong {
+    font-size: 11px;
+
+    overflow-wrap: anywhere;
+}
+
+.growth-report-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.growth-report-main span {
+    font-size: 9px;
+
+    opacity: .58;
+}
+
+.growth-report-status {
+    color: #0f4d4c;
+}
+
+.mobile-label {
+    display: none;
+}
+
+
+.report-pagination {
+    margin-top: 14px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 6px;
+}
+
+.report-pagination a,
+.report-pagination span {
+    width: 32px;
+    height: 32px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    text-decoration: none;
+
+    background: rgba(15,127,122,.05);
+    border: 1px solid rgba(15,127,122,.09);
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.report-pagination .active {
+    color: #fff;
+    background: #0f7f7a;
+}
+
+
+.report-empty-state {
+    min-height: 130px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 11px;
+
+    text-align: left;
+}
+
+.report-empty-state > i {
+    font-size: 22px;
+
+    color: #0f7f7a;
+}
+
+.report-empty-state div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.report-empty-state span {
+    font-size: 10px;
+
+    opacity: .65;
+}
+
+
+.reports-quote {
+    padding: 15px 18px;
+
+    text-align: center;
+}
+
+.reports-quote i {
+    color: #0f7f7a;
+    opacity: .70;
+}
+
+.reports-quote p {
+    margin: 6px 0 5px;
+
+    font-size: 11px;
+    line-height: 1.5;
+
+    opacity: .72;
+}
+
+.reports-quote span {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1px;
+
+    opacity: .44;
+}
+
+
+@media (max-width: 1100px) {
+
+    .reports-summary-grid {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .sensor-report-grid {
+        grid-template-columns: repeat(3,minmax(0,1fr));
+    }
+
+    .reports-two-column {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+@media (max-width: 800px) {
+
+    .growth-report-head {
+        display: none;
+    }
+
+    .growth-report-row {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .growth-report-main {
+        grid-column: 1 / -1;
+
+        padding-bottom: 7px;
+
+        border-bottom: 1px solid rgba(15,127,122,.08);
+    }
+
+    .mobile-label {
+        display: block;
+
+        margin-bottom: 2px;
+
+        font-size: 9px;
+        font-weight: 900;
+
+        opacity: .48;
+    }
+}
+
+
+@media (max-width: 650px) {
+
+    .reports-hero {
+        grid-template-columns: auto 1fr;
+    }
+
+    .reports-download-btn {
+        grid-column: 1 / -1;
+
+        width: 100%;
+    }
+
+    .reports-summary-grid,
+    .sensor-report-grid,
+    .growth-report-row {
+        grid-template-columns: 1fr;
+    }
+
+    .growth-report-main {
+        grid-column: auto;
+    }
+
+    .report-section-header {
+        flex-direction: column;
+    }
+
+    .report-alert-row,
+    .report-activity-row {
+        grid-template-columns: auto 1fr;
+    }
+
+    .report-alert-date {
+        grid-column: 2;
+        align-items: flex-start;
+    }
+}
+
+</style>
+
 {% endblock %}

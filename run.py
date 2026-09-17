@@ -154,107 +154,73 @@ def safe_float(value):
 def sensor_broadcast_loop():
     print("[sensor_broadcast_loop] STARTED")
 
-    # Same root JSON file used by app/utils.py.
     json_path = os.path.abspath(
-        os.path.join(app.root_path, "..", "arduino_data.json")
+        os.path.join(
+            app.root_path,
+            "..",
+            "arduino_data.json"
+        )
     )
 
-    # db_save.py expects the keys last_save and last_ph.
-    save_state = {"last_save": None, "last_ph": None}
+    save_state = {
+        "last_save": None,
+        "last_ph": None
+    }
 
     while True:
         try:
             if not os.path.exists(json_path):
-                print("[sensor_broadcast_loop] JSON file not found:", json_path)
-                merged = disconnected_payload("Sensor data file was not found.")
-            else:
-                file_age_seconds = time.time() - os.path.getmtime(json_path)
+                print(
+                    "[sensor_broadcast_loop] JSON file not found:",
+                    json_path
+                )
 
-                if file_age_seconds > STALE_AFTER_SECONDS:
+                merged = disconnected_payload(
+                    "Sensor data file was not found."
+                )
+
+            else:
+                file_age_seconds = (
+                    time.time()
+                    - os.path.getmtime(json_path)
+                )
+
+                if file_age_seconds > 20:
                     print(
                         "[sensor_broadcast_loop] STALE JSON:",
                         round(file_age_seconds, 2),
-                        "seconds old",
+                        "seconds old"
                     )
+
                     merged = disconnected_payload(
                         "No recent sensor update was received."
                     )
+
                 else:
-                    current_data = get_arduino_data() or {}
-                    print("RAW DATA:", current_data)
-                    merged = apply_individual_sensor_statuses(current_data)
-
-            print("MERGED DATA:", merged)
-            print(
-                "[sensor_broadcast_loop] tick, merged keys:",
-                list(merged.keys()) if merged else None,
-            )
-
-            ph_float = safe_float(merged.get("pH Level"))
-            water_float = safe_float(merged.get("Water Level"))
-
-            ph_status = str(merged.get("pH Status") or "Unknown")
-            water_status = str(merged.get("Water Status") or "Unknown")
-            arduino_status = str(merged.get("Status") or "Unknown")
-
-            try:
-                # Save only through the throttled helper to avoid duplicate
-                # MonitoringRecord rows every five seconds.
-                with app.app_context():
-                    save_monitoring_if_needed(
-                        state=save_state,
-                        ph_level=ph_float,
-                        ph_status=ph_status,
-                        arduino_status=arduino_status,
-                        water_level=water_float,
-                        water_status=water_status,
+                    current_data = (
+                        get_arduino_data()
+                        or {}
                     )
 
-                    # Save a critical alert only when a specific sensor is
-                    # reported disconnected. This block does not create a
-                    # WaterLevelLog every five seconds.
-                    disconnected_names = []
+                    print(
+                        "RAW DATA:",
+                        current_data
+                    )
 
-                    if merged.get("pH Sensor Status") == "Disconnected":
-                        disconnected_names.append("pH sensor")
-                    if merged.get("Water Level Sensor Status") == "Disconnected":
-                        disconnected_names.append("water-level sensor")
-                    if merged.get("Turbidity Sensor Status") == "Disconnected":
-                        disconnected_names.append("turbidity sensor")
-
-                    if disconnected_names:
-                        from app.models import MonitoringAlert
-
-                        # Avoid inserting the same alert on every loop. Only add
-                        # one if the latest alert has a different message.
-                        alert_message = (
-                            "Disconnected: " + ", ".join(disconnected_names)
+                    merged = (
+                        apply_individual_sensor_statuses(
+                            current_data
                         )
+                    )
 
-                        latest_alert = (
-                            MonitoringAlert.query
-                            .order_by(MonitoringAlert.created_at.desc())
-                            .first()
-                        )
+            merged["_tick"] = int(
+                time.time() * 1000
+            )
 
-                        if not latest_alert or latest_alert.message != alert_message:
-                            db.session.add(
-                                MonitoringAlert(
-                                    sensor_type="connection",
-                                    value=None,
-                                    message=alert_message,
-                                )
-                            )
-                            db.session.commit()
-
-            except Exception as error:
-                with app.app_context():
-                    db.session.rollback()
-
-                print("DB monitoring save failed:", error)
-
-            merged["_tick"] = int(time.time() * 1000)
-            socketio.emit("sensor_update", merged)
+            socketio.emit(
+                "sensor_update",
+                merged
+            )
 
         except Exception:
             traceback.print_exc()

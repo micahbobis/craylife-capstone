@@ -3,85 +3,781 @@
 {% block title %}Activity Dashboard{% endblock %}
 
 {% block content %}
-<div class="dashboard-container activity-dashboard">
+<div class="dashboard-container activity-dashboard activity-dashboard-clean">
 
-    <div class="panel glow dashboard-header">
-        <h2><i class="fa-solid fa-tasks"></i> Activity Dashboard</h2>
-        <p>View and log all recent activities here.</p>
-    </div>
-
-    <div class="panel glow activity-panel">
-        <div class="records-header">
-            <div>
-                <h3><i class="fa-solid fa-list"></i> Recent Activities</h3>
-                <p class="records-subtitle">Showing the latest logged activity records</p>
-            </div>
-            <div class="records-badge">
-                {{ activities.total if activities.total is defined else activities.items|length }} Records
-            </div>
+    <section class="panel glow activity-hero">
+        <div class="activity-hero-icon">
+            <i class="fa-solid fa-list-check"></i>
         </div>
 
-        <div class="activity-records">
-            {% for activity in activities.items %}
-                <div class="activity-record-card">
-                    <div class="record-left">
-                        <div class="record-icon">
-                            <i class="fa-solid fa-circle-check"></i>
+        <div class="activity-hero-copy">
+            <span class="activity-eyebrow">SYSTEM LOG</span>
+            <h2>Activity Dashboard</h2>
+            <p>Review recent system activity and add manual notes when needed.</p>
+        </div>
+
+        <div class="activity-hero-stat">
+            <span>Total Records</span>
+            <strong>
+                {{ activities.total if activities.total is defined else activities.items|length }}
+            </strong>
+        </div>
+    </section>
+
+    <section class="activity-main-grid">
+
+        <div class="panel glow activity-panel activity-records-panel">
+
+            <div class="records-header compact-records-header">
+                <div>
+                    <span class="activity-eyebrow">RECENT LOGS</span>
+                    <h3>
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        Recent Activities
+                    </h3>
+                    <p class="records-subtitle">
+                        Latest actions recorded by the Craylife system.
+                    </p>
+                </div>
+            </div>
+
+            <div class="activity-records clean-activity-records">
+
+                {% for activity in activities.items %}
+
+                    <div class="activity-record-card clean-activity-card">
+
+                        <div class="record-left">
+
+                            <div class="record-icon">
+                                <i class="fa-solid fa-circle-check"></i>
+                            </div>
+
+                            <div class="record-details">
+                                <div class="record-title">
+                                    {{ activity.action }}
+                                </div>
+
+                                <div class="record-meta">
+                                    System activity record
+                                </div>
+                            </div>
+
                         </div>
-                        <div class="record-details">
-                            <div class="record-title">{{ activity.action }}</div>
-                            <div class="record-meta">System activity record</div>
+
+                        <div class="record-right">
+                            <span class="timestamp">
+                                {{ activity.timestamp|ph_time('%b %d, %Y') }}
+                            </span>
+
+                            <span class="timestamp activity-time">
+                                {{ activity.timestamp|ph_time('%I:%M %p') }}
+                            </span>
+                        </div>
+
+                    </div>
+
+                {% else %}
+
+                    <div class="empty-records clean-empty-state">
+                        <i class="fa-solid fa-inbox"></i>
+
+                        <div>
+                            <strong>No activities yet</strong>
+                            <span>New activity records will appear here.</span>
                         </div>
                     </div>
 
-                    <div class="record-right">
-                        <span class="timestamp">{{ activity.timestamp }}</span>
-                    </div>
-                </div>
-            {% else %}
-                <div class="empty-records">
-                    <i class="fa-solid fa-inbox"></i>
-                    <span>No activities yet.</span>
-                </div>
-            {% endfor %}
-        </div>
-
-        <div class="pagination-wrap">
-            {% if activities.has_prev %}
-                <a href="{{ url_for('activity', page=activities.prev_num) }}" class="page-nav prev">
-                    <i class="fa-solid fa-angle-left"></i>
-                </a>
-            {% endif %}
-
-            <div class="page-numbers">
-                {% for p in range(1, activities.pages + 1) %}
-                    {% if p == activities.page %}
-                        <span class="page-number active">{{ p }}</span>
-                    {% else %}
-                        <a href="{{ url_for('activity', page=p) }}" class="page-number">{{ p }}</a>
-                    {% endif %}
                 {% endfor %}
+
             </div>
 
-            {% if activities.has_next %}
-                <a href="{{ url_for('activity', page=activities.next_num) }}" class="page-nav next">
-                    <i class="fa-solid fa-angle-right"></i>
-                </a>
+            {% if activities.pages > 1 %}
+            <div class="pagination-wrap">
+
+                {% if activities.has_prev %}
+                    <a
+                        href="{{ url_for('activity', page=activities.prev_num) }}"
+                        class="page-nav prev"
+                        aria-label="Previous page"
+                    >
+                        <i class="fa-solid fa-angle-left"></i>
+                    </a>
+                {% endif %}
+
+                <div class="page-numbers">
+
+                    {% for p in range(1, activities.pages + 1) %}
+
+                        {% if p == activities.page %}
+
+                            <span class="page-number active">
+                                {{ p }}
+                            </span>
+
+                        {% else %}
+
+                            <a
+                                href="{{ url_for('activity', page=p) }}"
+                                class="page-number"
+                            >
+                                {{ p }}
+                            </a>
+
+                        {% endif %}
+
+                    {% endfor %}
+
+                </div>
+
+                {% if activities.has_next %}
+                    <a
+                        href="{{ url_for('activity', page=activities.next_num) }}"
+                        class="page-nav next"
+                        aria-label="Next page"
+                    >
+                        <i class="fa-solid fa-angle-right"></i>
+                    </a>
+                {% endif %}
+
+            </div>
             {% endif %}
-        </div>
-    </div>
 
-    <div class="panel glow add-activity-panel">
-        <h3><i class="fa-solid fa-plus"></i> Add New Activity</h3>
-        <form action="{{ url_for('activity') }}" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            
-            <div class="form-group">
-                <input type="text" name="description" placeholder="Activity Description" class="form-control" required>
+        </div>
+
+
+        <aside class="panel glow add-activity-panel compact-add-panel">
+
+            <div class="add-panel-icon">
+                <i class="fa-solid fa-pen-to-square"></i>
             </div>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add Activity</button>
-        </form>
-    </div>
+
+            <div class="add-panel-copy">
+                <span class="activity-eyebrow">MANUAL ENTRY</span>
+                <h3>Add New Activity</h3>
+                <p>
+                    Add a short note to the activity log.
+                </p>
+            </div>
+
+            <form
+                action="{{ url_for('activity') }}"
+                method="POST"
+                class="activity-add-form"
+            >
+
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
+
+                <div class="form-group activity-input-group">
+                    <label for="activityDescription">
+                        Activity Description
+                    </label>
+
+                    <textarea
+                        id="activityDescription"
+                        name="description"
+                        placeholder="Example: Checked water quality readings"
+                        class="form-control activity-textarea"
+                        rows="4"
+                        maxlength="255"
+                        required
+                    ></textarea>
+                </div>
+
+                <button
+                    type="submit"
+                    class="btn btn-primary activity-submit-btn"
+                >
+                    <i class="fa-solid fa-plus"></i>
+                    Add Activity
+                </button>
+
+            </form>
+
+            <div class="activity-quote-card">
+                <i class="fa-solid fa-quote-left"></i>
+                <p>
+                    Consistent monitoring creates clearer records and better decisions.
+                </p>
+                <span>CRAYLIFE MONITORING</span>
+            </div>
+
+        </aside>
+
+    </section>
 
 </div>
+
+<style>
+
+.activity-dashboard-clean {
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0;
+    gap: 18px;
+}
+
+.activity-hero {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 22px;
+    margin-bottom: 0;
+}
+
+.activity-hero-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15, 127, 122, .10);
+    color: #0f7f7a;
+    font-size: 20px;
+}
+
+.activity-hero-copy {
+    min-width: 0;
+}
+
+.activity-hero-copy h2 {
+    margin: 2px 0 3px;
+}
+
+.activity-hero-copy p {
+    margin: 0;
+    font-size: 13px;
+    opacity: .74;
+}
+
+.activity-eyebrow {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.15px;
+    opacity: .58;
+}
+
+.activity-hero-stat {
+    min-width: 115px;
+    padding: 10px 14px;
+    border-radius: 12px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+
+    background: rgba(15, 127, 122, .06);
+    border: 1px solid rgba(15, 127, 122, .11);
+}
+
+.activity-hero-stat span {
+    font-size: 11px;
+    font-weight: 700;
+    opacity: .62;
+}
+
+.activity-hero-stat strong {
+    font-size: 22px;
+    color: #0f4d4c;
+}
+
+.activity-main-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.activity-records-panel,
+.compact-add-panel {
+    margin: 0;
+}
+
+.compact-records-header {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(15, 127, 122, .10);
+}
+
+.compact-records-header h3 {
+    margin: 2px 0 3px;
+}
+
+.compact-records-header .records-subtitle {
+    margin: 0;
+    font-size: 12px;
+}
+
+.clean-activity-records {
+    gap: 9px;
+}
+
+.clean-activity-card {
+    padding: 11px 13px;
+    border-radius: 12px;
+
+    background: rgba(15, 127, 122, .045);
+    border: 1px solid rgba(15, 127, 122, .09);
+}
+
+.clean-activity-card:hover {
+    transform: translateY(-1px);
+    background: rgba(15, 127, 122, .075);
+}
+
+.clean-activity-card .record-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.clean-activity-card .record-left {
+    min-width: 0;
+}
+
+.clean-activity-card .record-details {
+    min-width: 0;
+}
+
+.clean-activity-card .record-title {
+    font-size: 13px;
+    line-height: 1.35;
+    overflow-wrap: break-word;
+}
+
+.clean-activity-card .record-meta {
+    font-size: 11px;
+}
+
+.clean-activity-card .record-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.clean-activity-card .timestamp {
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 10px;
+    white-space: nowrap;
+    background: rgba(15, 127, 122, .06);
+}
+
+.clean-activity-card .activity-time {
+    background: transparent;
+    padding: 0 2px;
+    opacity: .7;
+}
+
+.clean-empty-state {
+    min-height: 140px;
+    padding: 24px;
+    border: 1px dashed rgba(15, 127, 122, .18);
+    background: rgba(15, 127, 122, .035);
+}
+
+.clean-empty-state i {
+    font-size: 22px;
+    color: #0f7f7a;
+}
+
+.clean-empty-state div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.clean-empty-state span {
+    font-size: 12px;
+    opacity: .68;
+}
+
+.compact-add-panel {
+    position: sticky;
+    top: 18px;
+    padding: 18px;
+}
+
+.add-panel-icon {
+    width: 42px;
+    height: 42px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: #0f7f7a;
+    background: rgba(15, 127, 122, .08);
+}
+
+.add-panel-copy h3 {
+    margin: 2px 0 4px;
+}
+
+.add-panel-copy p {
+    margin: 0 0 14px;
+    font-size: 12px;
+    line-height: 1.45;
+    opacity: .72;
+}
+
+.activity-add-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.activity-input-group {
+    width: 100%;
+    margin: 0;
+}
+
+.activity-input-group label {
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.activity-textarea {
+    width: 100%;
+    min-height: 105px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.activity-submit-btn {
+    width: 100%;
+    min-height: 40px;
+    justify-content: center;
+}
+
+.pagination-wrap {
+    margin-top: 16px;
+}
+
+.page-number,
+.page-nav {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+}
+
+@media (max-width: 900px) {
+
+    .activity-main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .compact-add-panel {
+        position: static;
+    }
+}
+
+@media (max-width: 620px) {
+
+    .activity-hero {
+        grid-template-columns: auto 1fr;
+    }
+
+    .activity-hero-stat {
+        grid-column: 1 / -1;
+        width: 100%;
+        align-items: flex-start;
+    }
+
+    .clean-activity-card {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .clean-activity-card .record-right {
+        width: 100%;
+        align-items: flex-start;
+        padding-left: 48px;
+    }
+}
+
+
+
+/* =========================================================
+   ACTIVITY DASHBOARD - FINAL SPACING / EQUAL CORNERS
+   ========================================================= */
+
+.activity-dashboard-clean {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* One consistent corner radius across the whole page */
+.activity-dashboard-clean .panel,
+.activity-dashboard-clean .activity-hero,
+.activity-dashboard-clean .activity-records-panel,
+.activity-dashboard-clean .compact-add-panel,
+.activity-dashboard-clean .clean-activity-card,
+.activity-dashboard-clean .activity-hero-stat,
+.activity-dashboard-clean .activity-hero-icon,
+.activity-dashboard-clean .add-panel-icon,
+.activity-dashboard-clean .activity-textarea,
+.activity-dashboard-clean .activity-submit-btn,
+.activity-dashboard-clean .page-number,
+.activity-dashboard-clean .page-nav,
+.activity-dashboard-clean .timestamp {
+    border-radius: 12px;
+}
+
+/* Main panels use matching padding */
+.activity-dashboard-clean .activity-hero,
+.activity-dashboard-clean .activity-records-panel,
+.activity-dashboard-clean .compact-add-panel {
+    padding: 18px;
+}
+
+/* Equal spacing between the two main columns */
+.activity-dashboard-clean .activity-main-grid {
+    gap: 16px;
+    align-items: stretch;
+}
+
+/* Make both main panels visually balanced */
+.activity-dashboard-clean .activity-records-panel,
+.activity-dashboard-clean .compact-add-panel {
+    min-width: 0;
+    margin: 0;
+}
+
+/* Header spacing */
+.activity-dashboard-clean .compact-records-header {
+    margin: 0 0 12px;
+    padding: 0 0 12px;
+}
+
+.activity-dashboard-clean .activity-hero-copy h2,
+.activity-dashboard-clean .compact-records-header h3,
+.activity-dashboard-clean .add-panel-copy h3 {
+    line-height: 1.25;
+}
+
+/* Equal activity rows */
+.activity-dashboard-clean .clean-activity-records {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.activity-dashboard-clean .clean-activity-card {
+    width: 100%;
+    min-height: 62px;
+    padding: 10px 12px;
+    box-sizing: border-box;
+}
+
+/* Match icon boxes */
+.activity-dashboard-clean .record-icon,
+.activity-dashboard-clean .add-panel-icon {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Cleaner right-side form spacing */
+.activity-dashboard-clean .compact-add-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.activity-dashboard-clean .add-panel-icon {
+    margin-bottom: 10px;
+}
+
+.activity-dashboard-clean .add-panel-copy p {
+    margin: 0 0 12px;
+}
+
+.activity-dashboard-clean .activity-add-form {
+    gap: 10px;
+}
+
+.activity-dashboard-clean .activity-input-group label {
+    display: block;
+    margin: 0 0 6px;
+}
+
+.activity-dashboard-clean .activity-textarea {
+    min-height: 100px;
+    padding: 11px 12px;
+}
+
+.activity-dashboard-clean .activity-submit-btn {
+    min-height: 42px;
+    margin: 0;
+}
+
+/* Consistent date/time pills */
+.activity-dashboard-clean .clean-activity-card .timestamp {
+    min-width: 92px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+/* Pagination has equal square corners/sizing */
+.activity-dashboard-clean .pagination-wrap {
+    margin: 14px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid rgba(15, 127, 122, .09);
+}
+
+.activity-dashboard-clean .page-number,
+.activity-dashboard-clean .page-nav {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+/* Keep all content away from card edges */
+.activity-dashboard-clean .record-left,
+.activity-dashboard-clean .record-details,
+.activity-dashboard-clean .activity-hero-copy,
+.activity-dashboard-clean .add-panel-copy {
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .activity-dashboard-clean .activity-main-grid {
+        gap: 16px;
+    }
+
+    .activity-dashboard-clean .activity-hero,
+    .activity-dashboard-clean .activity-records-panel,
+    .activity-dashboard-clean .compact-add-panel {
+        padding: 16px;
+    }
+}
+
+@media (max-width: 620px) {
+    .activity-dashboard-clean {
+        gap: 12px;
+    }
+
+    .activity-dashboard-clean .activity-main-grid {
+        gap: 12px;
+    }
+
+    .activity-dashboard-clean .activity-hero,
+    .activity-dashboard-clean .activity-records-panel,
+    .activity-dashboard-clean .compact-add-panel {
+        padding: 14px;
+    }
+
+    .activity-dashboard-clean .clean-activity-card {
+        padding: 11px;
+    }
+}
+
+
+
+/* =========================================================
+   FULL-SCREEN HOME-LIKE WIDTH + BLANK-SPACE QUOTE
+   ========================================================= */
+
+.activity-dashboard-clean {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.activity-dashboard-clean .activity-main-grid {
+    width: 100%;
+    grid-template-columns: minmax(0, 2fr) minmax(300px, .8fr);
+}
+
+.activity-dashboard-clean .activity-records-panel,
+.activity-dashboard-clean .compact-add-panel {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Let the side card use its available vertical space neatly */
+.activity-dashboard-clean .compact-add-panel {
+    position: static;
+    align-self: stretch;
+}
+
+/* Quote fills otherwise-empty side-panel space */
+.activity-dashboard-clean .activity-quote-card {
+    margin-top: auto;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 127, 122, .10);
+    background: rgba(15, 127, 122, .045);
+}
+
+.activity-dashboard-clean .activity-quote-card i {
+    display: block;
+    margin-bottom: 8px;
+    color: #0f7f7a;
+    font-size: 17px;
+    opacity: .75;
+}
+
+.activity-dashboard-clean .activity-quote-card p {
+    margin: 0 0 8px;
+    font-size: 12px;
+    line-height: 1.55;
+    opacity: .78;
+}
+
+.activity-dashboard-clean .activity-quote-card span {
+    display: block;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    opacity: .48;
+}
+
+/* On large displays, use the available dashboard width like Home */
+@media (min-width: 1200px) {
+    .activity-dashboard-clean {
+        width: 100%;
+        max-width: none;
+    }
+}
+
+@media (max-width: 900px) {
+    .activity-dashboard-clean .activity-main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .activity-dashboard-clean .activity-quote-card {
+        margin-top: 14px;
+    }
+}
+
+</style>
+
 {% endblock %}

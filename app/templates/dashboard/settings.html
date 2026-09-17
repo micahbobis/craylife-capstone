@@ -3,108 +3,1126 @@
 {% block title %}Settings - Craylife{% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
 
-    <!-- Page Header -->
-    <div class="panel glow dashboard-header text-center">
-        <h1><i class="fa-solid fa-gear"></i> Settings</h1>
-        <p>Manage your account and system preferences efficiently.</p>
-    </div>
+<div class="dashboard-container settings-dashboard">
 
-    <!-- User Info Panel -->
-    <div class="panel glow dashboard-panel">
-        <h2><i class="fa-solid fa-user"></i> User Information</h2>
-        <form method="POST" action="{{ url_for('settings') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <section class="panel glow settings-hero">
 
-            <div class="form-group">
-                <label for="username"><i class="fa-solid fa-user-tag"></i> Username</label>
-                <input type="text" id="username" name="username" class="form-control"
-                       value="{{ user.username if user is defined else '' }}" required>
+        <div class="settings-hero-icon">
+            <i class="fa-solid fa-gear"></i>
+        </div>
+
+        <div class="settings-hero-copy">
+            <span class="settings-eyebrow">SYSTEM PREFERENCES</span>
+            <h2>Settings</h2>
+            <p>
+                Manage your account details, password, notifications,
+                and default system preferences from one place.
+            </p>
+        </div>
+
+        <div class="settings-hero-badge">
+            <i class="fa-solid fa-shield-halved"></i>
+            Account & System
+        </div>
+
+    </section>
+
+
+    <section class="settings-grid">
+
+        <!-- ACCOUNT -->
+        <section class="panel glow settings-card">
+
+            <div class="settings-section-header">
+                <div class="settings-section-icon">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+
+                <div>
+                    <span class="settings-eyebrow">ACCOUNT</span>
+                    <h3>User Information</h3>
+                    <p>
+                        Update the username and email address associated with your account.
+                    </p>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="email"><i class="fa-solid fa-envelope"></i> Email Address</label>
-                <input type="email" id="email" name="email" class="form-control"
-                       value="{{ user.email if user is defined else '' }}" required>
+            <form method="POST" action="{{ url_for('settings') }}" class="settings-form card-form">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="account">
+
+                <div class="settings-form-grid">
+
+                    <div class="form-group">
+                        <label for="username">
+                            <i class="fa-solid fa-user-tag"></i>
+                            Username
+                        </label>
+
+                        <input
+                            type="text"
+                            id="username"
+                            name="username"
+                            class="form-control"
+                            value="{{ user.username if user is defined else '' }}"
+                            autocomplete="username"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">
+                            <i class="fa-solid fa-envelope"></i>
+                            Email Address
+                        </label>
+
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            class="form-control"
+                            value="{{ user.email if user is defined else '' }}"
+                            autocomplete="email"
+                            required
+                        >
+                    </div>
+
+                </div>
+
+                <div class="settings-form-actions push-bottom">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        Update Account
+                    </button>
+                </div>
+
+            </form>
+
+        </section>
+
+
+        <!-- SYSTEM SETTINGS -->
+        <section class="panel glow settings-card">
+
+            <div class="settings-section-header">
+                <div class="settings-section-icon">
+                    <i class="fa-solid fa-envelope-circle-check"></i>
+                </div>
+
+                <div>
+                    <span class="settings-eyebrow">REPORT NOTIFICATIONS</span>
+                    <h3>Admin Report Notifications</h3>
+                    <p>
+                        Choose where actual sensor and growth monitoring reports should be sent.
+                    </p>
+                </div>
             </div>
 
-            <div class="form-group text-center">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fa-solid fa-floppy-disk"></i> Update Info
+            <form method="POST" action="{{ url_for('settings') }}" class="settings-form card-form">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="preferences">
+
+                <div class="settings-form-grid two-column">
+
+                    <div class="form-group settings-span-two">
+                        <label for="admin_email">
+                            <i class="fa-solid fa-envelope"></i>
+                            Admin Report Email
+                        </label>
+
+                        <input
+                            type="email"
+                            id="admin_email"
+                            name="admin_email"
+                            class="form-control"
+                            value="{{ settings.admin_email if settings is defined else user.email }}"
+                            placeholder="{{ user.email }}"
+                            required
+                        >
+
+                        <small class="field-help">
+                            Actual monitoring and growth alerts will be sent to this address.
+                        </small>
+                    </div>
+
+
+                    <div class="form-group">
+                        <label for="sensor_alerts">
+                            <i class="fa-solid fa-microchip"></i>
+                            Sensor Issue Alerts
+                        </label>
+
+                        <select
+                            id="sensor_alerts"
+                            name="sensor_alerts"
+                            class="form-control"
+                        >
+                            <option
+                                value="yes"
+                                {% if settings.sensor_alerts == 'yes' %}
+                                    selected
+                                {% endif %}
+                            >
+                                Enabled
+                            </option>
+
+                            <option
+                                value="no"
+                                {% if settings.sensor_alerts == 'no' %}
+                                    selected
+                                {% endif %}
+                            >
+                                Disabled
+                            </option>
+                        </select>
+
+                        <small class="field-help">
+                            Sends actual disconnected and abnormal sensor incidents.
+                        </small>
+                    </div>
+
+
+                    <div class="form-group">
+                        <label for="growth_alerts">
+                            <i class="fa-solid fa-chart-line"></i>
+                            Growth Monitoring Alerts
+                        </label>
+
+                        <select
+                            id="growth_alerts"
+                            name="growth_alerts"
+                            class="form-control"
+                        >
+                            <option
+                                value="yes"
+                                {% if settings.growth_alerts == 'yes' %}
+                                    selected
+                                {% endif %}
+                            >
+                                Enabled
+                            </option>
+
+                            <option
+                                value="no"
+                                {% if settings.growth_alerts == 'no' %}
+                                    selected
+                                {% endif %}
+                            >
+                                Disabled
+                            </option>
+                        </select>
+
+                        <small class="field-help">
+                            Sends actual 14-day verification and growth attention reports.
+                        </small>
+                    </div>
+
+
+                    <div class="form-group settings-span-two">
+                        <label for="daily_summary">
+                            <i class="fa-solid fa-file-lines"></i>
+                            Daily System Summary (8:00 AM)
+                        </label>
+
+                        <select
+                            id="daily_summary"
+                            name="daily_summary"
+                            class="form-control"
+                        >
+                            <option
+                                value="no"
+                                {% if settings.daily_summary == 'no' %}
+                                    selected
+                                {% endif %}
+                            >
+                                Disabled
+                            </option>
+
+                            <option
+                                value="yes"
+                                {% if settings.daily_summary == 'yes' %}
+                                    selected
+                                {% endif %}
+                            >
+                                Enabled
+                            </option>
+                        </select>
+
+                        <small class="field-help">
+                            When enabled, one summary email is sent per day at 8:00 AM Philippine time. If the system starts later, the unsent summary is sent once after startup.
+                        </small>
+                    </div>
+
+                </div>
+
+                <div class="settings-notification-note">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>
+                        Sensor emails use the same real monitoring conditions recorded in
+                        <strong>Monitoring Alerts</strong>. Growth emails use the same saved
+                        batch observations and 14-day growth logic shown in Reports.
+                        The daily summary sends <strong>once per calendar day only</strong>,
+                        not every sensor reading.
+                    </span>
+                </div>
+
+                <div class="settings-form-actions push-bottom">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        Save Report Settings
+                    </button>
+                </div>
+
+            </form>
+
+        </section>
+
+
+        <!-- PASSWORD -->
+        <section class="panel glow settings-card">
+
+            <div class="settings-section-header">
+                <div class="settings-section-icon">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+
+                <div>
+                    <span class="settings-eyebrow">SECURITY</span>
+                    <h3>Change Password</h3>
+                    <p>
+                        Password changes require a verification code sent to your account email.
+                    </p>
+                </div>
+            </div>
+
+            {% if password_verification_pending %}
+
+            <div class="password-verification-box">
+                <div class="verification-icon">
+                    <i class="fa-solid fa-envelope-circle-check"></i>
+                </div>
+
+                <div class="verification-copy">
+                    <span class="settings-eyebrow">EMAIL VERIFICATION</span>
+                    <h4>Enter Verification Code</h4>
+                    <p>
+                        We sent a 6-digit code to
+                        <strong>{{ user.email }}</strong>.
+                        The code expires in 10 minutes.
+                    </p>
+                </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('settings') }}" class="settings-form card-form">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="password_verify">
+
+                <div class="form-group">
+                    <label for="verification_code">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        6-Digit Verification Code
+                    </label>
+
+                    <input
+                        type="text"
+                        id="verification_code"
+                        name="verification_code"
+                        class="form-control verification-code-input"
+                        inputmode="numeric"
+                        pattern="[0-9]{6}"
+                        maxlength="6"
+                        placeholder="000000"
+                        autocomplete="one-time-code"
+                        required
+                    >
+                </div>
+
+                <div class="settings-form-actions push-bottom verification-actions">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-circle-check"></i>
+                        Verify & Change Password
+                    </button>
+                </div>
+
+            </form>
+
+            <form method="POST" action="{{ url_for('settings') }}" class="cancel-password-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="password_cancel">
+
+                <button type="submit" class="password-cancel-btn">
+                    Cancel password change
                 </button>
+            </form>
+
+            {% else %}
+
+            <form method="POST" action="{{ url_for('settings') }}" class="settings-form card-form">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="password_request">
+
+                <div class="settings-form-grid">
+
+                    <div class="form-group password-field">
+                        <label for="current_password">
+                            <i class="fa-solid fa-key"></i>
+                            Current Password
+                        </label>
+
+                        <div class="password-input-wrap">
+                            <input
+                                type="password"
+                                id="current_password"
+                                name="current_password"
+                                class="form-control"
+                                autocomplete="current-password"
+                                required
+                            >
+
+                            <button
+                                type="button"
+                                class="password-toggle"
+                                data-target="current_password"
+                                aria-label="Show password"
+                            >
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-form-grid two-column">
+
+                        <div class="form-group password-field">
+                            <label for="new_password">
+                                <i class="fa-solid fa-key"></i>
+                                New Password
+                            </label>
+
+                            <div class="password-input-wrap">
+                                <input
+                                    type="password"
+                                    id="new_password"
+                                    name="new_password"
+                                    class="form-control"
+                                    autocomplete="new-password"
+                                    minlength="8"
+                                    required
+                                >
+
+                                <button
+                                    type="button"
+                                    class="password-toggle"
+                                    data-target="new_password"
+                                    aria-label="Show password"
+                                >
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group password-field">
+                            <label for="confirm_password">
+                                <i class="fa-solid fa-circle-check"></i>
+                                Confirm Password
+                            </label>
+
+                            <div class="password-input-wrap">
+                                <input
+                                    type="password"
+                                    id="confirm_password"
+                                    name="confirm_password"
+                                    class="form-control"
+                                    autocomplete="new-password"
+                                    minlength="8"
+                                    required
+                                >
+
+                                <button
+                                    type="button"
+                                    class="password-toggle"
+                                    data-target="confirm_password"
+                                    aria-label="Show password"
+                                >
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="password-hint">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Your password will only change after the email verification code is confirmed.
+                </div>
+
+                <div class="settings-form-actions push-bottom">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        Send Verification Code
+                    </button>
+                </div>
+
+            </form>
+
+            {% endif %}
+
+        </section>
+
+
+        <!-- GUIDE -->
+        <section class="panel glow settings-card settings-guide-card">
+
+            <div class="settings-section-header">
+                <div class="settings-section-icon">
+                    <i class="fa-solid fa-circle-info"></i>
+                </div>
+
+                <div>
+                    <span class="settings-eyebrow">SYSTEM GUIDE</span>
+                    <h3>What These Settings Affect</h3>
+                    <p>
+                        Quick reference for the main account and system preferences.
+                    </p>
+                </div>
             </div>
-        </form>
-    </div>
 
-    <!-- Password Change Panel -->
-    <div class="panel glow dashboard-panel">
-        <h2><i class="fa-solid fa-lock"></i> Change Password</h2>
-        <form method="POST" action="{{ url_for('password_reset') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="settings-info-list">
 
-            <div class="form-group">
-                <label for="current_password"><i class="fa-solid fa-key"></i> Current Password</label>
-                <input type="password" id="current_password" name="current_password" class="form-control" required>
+                <div>
+                    <i class="fa-solid fa-bell"></i>
+                    <span>
+                        <strong>Notifications</strong>
+                        <small>Controls whether system notices are enabled.</small>
+                    </span>
+                </div>
+
+                <div>
+                    <i class="fa-solid fa-box"></i>
+                    <span>
+                        <strong>Batch Defaults</strong>
+                        <small>Speeds up new batch setup with a preferred quantity.</small>
+                    </span>
+                </div>
+
+                <div>
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>
+                        <strong>Retention</strong>
+                        <small>Defines your preferred history-retention period.</small>
+                    </span>
+                </div>
+
+                <div>
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>
+                        <strong>Password Security</strong>
+                        <small>Email verification is required before password changes are applied.</small>
+                    </span>
+                </div>
+
             </div>
 
-            <div class="form-group">
-                <label for="new_password"><i class="fa-solid fa-key-skeleton"></i> New Password</label>
-                <input type="password" id="new_password" name="new_password" class="form-control" required>
+            <div class="settings-quote-box">
+                <i class="fa-solid fa-quote-left"></i>
+                <p>
+                    Consistent settings help keep monitoring, alerts,
+                    and account management predictable.
+                </p>
+                <span>CRAYLIFE SYSTEM</span>
             </div>
 
-            <div class="form-group">
-                <label for="confirm_password"><i class="fa-solid fa-key-skeleton"></i> Confirm New Password</label>
-                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
-            </div>
+        </section>
 
-            <div class="form-group text-center">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fa-solid fa-paper-plane"></i> Update Password
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <!-- System Settings Panel -->
-    <div class="panel glow dashboard-panel">
-        <h2><i class="fa-solid fa-sliders"></i> System Settings</h2>
-        <form method="POST" action="{{ url_for('settings') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-            <div class="form-group">
-                <label for="setting1"><i class="fa-solid fa-envelope-circle-check"></i> Notification Email</label>
-                <input type="email" id="setting1" name="setting1" class="form-control"
-                       value="{{ settings.setting1 if settings is defined and settings.setting1 else '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="setting2"><i class="fa-solid fa-boxes-stacked"></i> Default Batch Quantity</label>
-                <input type="number" id="setting2" name="setting2" class="form-control"
-                       value="{{ settings.setting2 if settings is defined and settings.setting2 else '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="setting3"><i class="fa-solid fa-bell"></i> Enable Notifications</label>
-                <select id="setting3" name="setting3" class="form-control">
-                    <option value="yes" {% if settings.setting3 == 'yes' %}selected{% endif %}>Yes</option>
-                    <option value="no" {% if settings.setting3 == 'no' %}selected{% endif %}>No</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="setting4"><i class="fa-solid fa-calendar-days"></i> Data Retention (Days)</label>
-                <input type="number" id="setting4" name="setting4" class="form-control"
-                       value="{{ settings.setting4 if settings is defined and settings.setting4 else 30 }}">
-            </div>
-
-            <div class="form-group text-center">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fa-solid fa-floppy-disk"></i> Save System Settings
-                </button>
-            </div>
-        </form>
-    </div>
+    </section>
 
 </div>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    document.querySelectorAll(".password-toggle").forEach(function (button) {
+
+        button.addEventListener("click", function () {
+
+            const targetId = button.dataset.target;
+            const input = document.getElementById(targetId);
+
+            if (!input) return;
+
+            const showing = input.type === "text";
+
+            input.type = showing ? "password" : "text";
+
+            const icon = button.querySelector("i");
+
+            if (icon) {
+                icon.className = showing
+                    ? "fa-solid fa-eye"
+                    : "fa-solid fa-eye-slash";
+            }
+
+            button.setAttribute(
+                "aria-label",
+                showing ? "Show password" : "Hide password"
+            );
+        });
+    });
+});
+</script>
+
+
+<style>
+
+.settings-dashboard {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.settings-dashboard .panel,
+.settings-hero-icon,
+.settings-hero-badge,
+.settings-section-icon,
+.settings-info-list > div,
+.password-hint,
+.password-verification-box,
+.verification-icon,
+.settings-quote-box,
+.input-with-suffix span {
+    border-radius: 12px;
+}
+
+
+/* HERO */
+.settings-hero {
+    padding: 18px;
+
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+}
+
+.settings-hero-icon {
+    width: 50px;
+    height: 50px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.09);
+    color: #0f7f7a;
+
+    font-size: 20px;
+}
+
+.settings-hero-copy {
+    min-width: 0;
+}
+
+.settings-hero-copy h2 {
+    margin: 2px 0 3px;
+}
+
+.settings-hero-copy p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: .74;
+}
+
+.settings-eyebrow {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.1px;
+    opacity: .56;
+}
+
+.settings-hero-badge {
+    padding: 8px 11px;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+
+    background: rgba(15,127,122,.06);
+    border: 1px solid rgba(15,127,122,.10);
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+
+/* EQUAL 2 x 2 GRID */
+.settings-grid {
+    width: 100%;
+
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: stretch;
+}
+
+.settings-card {
+    min-width: 0;
+    min-height: 390px;
+
+    margin: 0;
+    padding: 18px;
+
+    box-sizing: border-box;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-section-header {
+    min-height: 70px;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+
+    border-bottom: 1px solid rgba(15,127,122,.09);
+}
+
+.settings-section-icon {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.08);
+    color: #0f7f7a;
+}
+
+.settings-section-header > div:last-child {
+    min-width: 0;
+}
+
+.settings-section-header h3 {
+    margin: 2px 0 3px;
+}
+
+.settings-section-header p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    opacity: .68;
+}
+
+
+/* FORMS */
+.settings-form {
+    width: 100%;
+}
+
+.card-form {
+    flex: 1;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.settings-form-grid.two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-form .form-group {
+    min-width: 0;
+    margin: 0;
+}
+
+.settings-form label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    margin-bottom: 6px;
+
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.settings-form label i {
+    color: #0f7f7a;
+}
+
+.settings-form .form-control {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.field-help {
+    display: block;
+    margin-top: 5px;
+
+    font-size: 10px;
+    line-height: 1.4;
+
+    opacity: .58;
+}
+
+.settings-form-actions {
+    margin-top: 14px;
+
+    display: flex;
+    justify-content: flex-end;
+}
+
+.push-bottom {
+    margin-top: auto;
+    padding-top: 14px;
+}
+
+.settings-form-actions .btn {
+    min-height: 40px;
+    min-width: 175px;
+
+    justify-content: center;
+}
+
+
+/* PASSWORD */
+.password-input-wrap {
+    position: relative;
+}
+
+.password-input-wrap .form-control {
+    padding-right: 42px;
+}
+
+.password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+
+    width: 30px;
+    height: 30px;
+
+    transform: translateY(-50%);
+
+    border: 0;
+    border-radius: 9px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: #0f7f7a;
+    background: rgba(15,127,122,.06);
+
+    cursor: pointer;
+}
+
+.password-hint {
+    margin-top: 10px;
+    padding: 9px 10px;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+
+    background: rgba(15,127,122,.04);
+    border: 1px solid rgba(15,127,122,.07);
+
+    font-size: 10px;
+    line-height: 1.45;
+
+    opacity: .74;
+}
+
+.password-hint i {
+    margin-top: 1px;
+    color: #0f7f7a;
+}
+
+
+/* INPUT SUFFIX */
+.input-with-suffix {
+    position: relative;
+}
+
+.input-with-suffix .form-control {
+    padding-right: 60px;
+}
+
+.input-with-suffix span {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+
+    transform: translateY(-50%);
+
+    padding: 4px 8px;
+
+    background: rgba(15,127,122,.06);
+
+    font-size: 10px;
+    font-weight: 800;
+
+    opacity: .70;
+}
+
+
+/* VERIFICATION */
+.password-verification-box {
+    margin-bottom: 14px;
+    padding: 12px;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+
+    background: rgba(15,127,122,.045);
+    border: 1px solid rgba(15,127,122,.08);
+}
+
+.verification-icon {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.08);
+    color: #0f7f7a;
+}
+
+.verification-copy h4 {
+    margin: 2px 0 3px;
+}
+
+.verification-copy p {
+    margin: 0;
+
+    font-size: 11px;
+    line-height: 1.45;
+
+    opacity: .72;
+}
+
+.verification-code-input {
+    max-width: 220px;
+
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 6px;
+
+    text-align: center;
+}
+
+.verification-actions {
+    justify-content: flex-start;
+}
+
+.cancel-password-form {
+    margin-top: 8px;
+}
+
+.password-cancel-btn {
+    border: 0;
+    padding: 0;
+
+    color: inherit;
+    background: transparent;
+
+    font-family: inherit;
+    font-size: 11px;
+
+    opacity: .60;
+    cursor: pointer;
+}
+
+.password-cancel-btn:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+
+/* GUIDE */
+.settings-guide-card {
+    justify-content: flex-start;
+}
+
+.settings-info-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    gap: 8px;
+}
+
+.settings-info-list > div {
+    min-height: 68px;
+    padding: 10px;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+
+    box-sizing: border-box;
+
+    background: rgba(15,127,122,.035);
+    border: 1px solid rgba(15,127,122,.07);
+}
+
+.settings-info-list > div > i {
+    width: 22px;
+    margin-top: 2px;
+
+    color: #0f7f7a;
+
+    text-align: center;
+}
+
+.settings-info-list span {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.settings-info-list strong {
+    font-size: 11px;
+}
+
+.settings-info-list small {
+    font-size: 10px;
+    line-height: 1.4;
+    opacity: .62;
+}
+
+.settings-quote-box {
+    margin-top: auto;
+    padding: 12px;
+
+    text-align: center;
+
+    background: rgba(15,127,122,.035);
+    border: 1px solid rgba(15,127,122,.07);
+}
+
+.settings-quote-box i {
+    color: #0f7f7a;
+    opacity: .70;
+}
+
+.settings-quote-box p {
+    margin: 6px 0 5px;
+
+    font-size: 11px;
+    line-height: 1.5;
+
+    opacity: .72;
+}
+
+.settings-quote-box span {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1px;
+
+    opacity: .44;
+}
+
+
+
+
+.settings-span-two {
+    grid-column: 1 / -1;
+}
+
+.settings-notification-note {
+    margin-top: 12px;
+    padding: 10px;
+
+    border-radius: 12px;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+
+    background: rgba(15,127,122,.04);
+    border: 1px solid rgba(15,127,122,.07);
+
+    font-size: 10px;
+    line-height: 1.45;
+
+    opacity: .74;
+}
+
+.settings-notification-note i {
+    margin-top: 1px;
+    color: #0f7f7a;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1050px) {
+
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-card {
+        min-height: auto;
+    }
+}
+
+@media (max-width: 700px) {
+
+    .settings-hero {
+        grid-template-columns: auto 1fr;
+    }
+
+    .settings-hero-badge {
+        grid-column: 1 / -1;
+        width: fit-content;
+    }
+
+    .settings-form-grid.two-column,
+    .settings-info-list {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-form-actions .btn {
+        width: 100%;
+    }
+
+    .settings-section-header {
+        min-height: auto;
+    }
+}
+
+</style>
+
 {% endblock %}

@@ -18,13 +18,16 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     PERMANENT_SESSION_LIFETIME = 3600
 
+    # EMAIL CONFIGURATION
     MAIL_SERVER = "smtp.gmail.com"
     MAIL_PORT = 587
     MAIL_USE_TLS = True
+    MAIL_USE_SSL = False
 
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
-    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_USERNAME")
+    MAIL_USERNAME = "micahavrill14@gmail.com"
+    MAIL_PASSWORD = "qdjz ivsg kexp hwun"
+
+    MAIL_DEFAULT_SENDER = MAIL_USERNAME
 
 
 class DevelopmentConfig(Config):

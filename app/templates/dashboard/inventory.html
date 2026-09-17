@@ -1,56 +1,746 @@
 {% extends "base.html" %}
 
-{% block title %}Inventory - Craylife{% endblock %}
+{% block title %}Classification Analytics - Craylife{% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
 
-    <div class="panel glow dashboard-header text-center">
-        <h1><i class="fa-solid fa-boxes-stacked"></i>Batch Records</h1>
-        <p>Check and manage your crayfish stock efficiently.</p>
-    </div>
+<div class="dashboard-container analytics-dashboard">
 
-    <div class="panel glow dashboard-panel">
-        <table class="inventory-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Quantity</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in inventory_items %}
-                <tr>
-                    <td>{{ item.id }}</td>
-                    <td>{{ item.name }}</td>
-                    <td>{{ item.quantity }}</td>
-                    <td>
-                        <a class="button small" href="{{ url_for('edit_item', item_id=item.id) }}">
-                            <i class="fa-solid fa-pen-to-square"></i> Edit
-                        </a>
-                        <form action="{{ url_for('delete_item', item_id=item.id) }}" method="POST" style="display:inline;">
-                            <button class="button small danger">
-                                <i class="fa-solid fa-trash"></i> Delete
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4" class="text-center">No inventory yet.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <section class="panel glow analytics-hero">
 
-        <div class="text-right" style="margin-top: 15px;">
-            <a href="{{ url_for('create_batch') }}" class="btn btn-primary">
-                <i class="fa-solid fa-plus"></i> Add New Batch
-            </a>
+        <div class="analytics-hero-icon">
+            <i class="fa-solid fa-chart-pie"></i>
         </div>
-    </div>
+
+        <div class="analytics-hero-copy">
+            <span class="analytics-eyebrow">CLASSIFICATION RECORDS</span>
+            <h2>Classification Analytics</h2>
+            <p>
+                Review saved classification results from both Quick Classify
+                and Batch Tracking. This page updates automatically from saved records.
+            </p>
+        </div>
+
+        <div class="analytics-hero-badge">
+            <i class="fa-solid fa-database"></i>
+            Saved Records
+        </div>
+
+    </section>
+
+
+    <section class="analytics-summary-grid">
+
+        <div class="panel glow analytics-stat-card">
+            <div class="analytics-stat-icon">
+                <i class="fa-solid fa-images"></i>
+            </div>
+
+            <div>
+                <span>Total Classifications</span>
+                <strong>{{ classification_summary.total_classifications }}</strong>
+                <small>All saved image results</small>
+            </div>
+        </div>
+
+
+        <div class="panel glow analytics-stat-card">
+            <div class="analytics-stat-icon">
+                <i class="fa-solid fa-mars"></i>
+            </div>
+
+            <div>
+                <span>Male Predictions</span>
+                <strong>{{ classification_summary.male_count }}</strong>
+                <small>Classification records</small>
+            </div>
+        </div>
+
+
+        <div class="panel glow analytics-stat-card">
+            <div class="analytics-stat-icon">
+                <i class="fa-solid fa-venus"></i>
+            </div>
+
+            <div>
+                <span>Female Predictions</span>
+                <strong>{{ classification_summary.female_count }}</strong>
+                <small>Classification records</small>
+            </div>
+        </div>
+
+
+        <div class="panel glow analytics-stat-card">
+            <div class="analytics-stat-icon">
+                <i class="fa-solid fa-folder-tree"></i>
+            </div>
+
+            <div>
+                <span>Batch Observations</span>
+                <strong>{{ classification_summary.batch_classifications }}</strong>
+                <small>Saved with batch tracking</small>
+            </div>
+        </div>
+
+    </section>
+
+
+    <section class="analytics-content-grid">
+
+        <div class="panel glow analytics-records-panel">
+
+            <div class="analytics-section-header">
+                <div>
+                    <span class="analytics-eyebrow">LATEST RESULTS</span>
+                    <h3>
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        Recent Classifications
+                    </h3>
+                    <p>
+                        Latest saved classifications across the system.
+                    </p>
+                </div>
+
+                <span class="analytics-count-badge">
+                    {{ classification_summary.total_classifications }} total
+                </span>
+            </div>
+
+
+            {% if recent_records %}
+
+            <div class="analytics-record-list">
+
+                {% for record in recent_records %}
+
+                <div class="analytics-record-row">
+
+                    <div class="analytics-record-main">
+
+                        <div class="analytics-record-icon">
+                            <i class="fa-solid fa-fish"></i>
+                        </div>
+
+                        <div class="analytics-record-copy">
+                            <strong>
+                                {{ record.gender }} · {{ record.growth }}
+                            </strong>
+
+                            <span>
+                                {% if record.batch_name %}
+                                    {{ record.batch_name }} ·
+                                {% endif %}
+                                {{ record.mode }}
+                            </span>
+                        </div>
+
+                    </div>
+
+
+                    <div class="analytics-record-metric">
+                        <span>Gender Confidence</span>
+                        <strong>
+                            {% if record.gender_confidence is not none %}
+                                {{ '%.2f'|format(record.gender_confidence) }}%
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                    </div>
+
+
+                    <div class="analytics-record-metric">
+                        <span>Growth Confidence</span>
+                        <strong>
+                            {% if record.growth_confidence is not none %}
+                                {{ '%.2f'|format(record.growth_confidence) }}%
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                    </div>
+
+
+                    <div class="analytics-record-metric">
+                        <span>Est. Length</span>
+                        <strong>
+                            {% if record.estimated_length_cm is not none %}
+                                {{ '%.1f'|format(record.estimated_length_cm) }} cm
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                    </div>
+
+
+                    <div class="analytics-record-date">
+                        <strong>
+                            {{ record.created_at|ph_time('%b %d, %Y') }}
+                        </strong>
+
+                        <span>
+                            {{ record.created_at|ph_time('%I:%M %p') }}
+                        </span>
+                    </div>
+
+                </div>
+
+                {% endfor %}
+
+            </div>
+
+            {% else %}
+
+            <div class="analytics-empty-state">
+                <i class="fa-solid fa-image"></i>
+
+                <div>
+                    <strong>No classification records yet</strong>
+                    <span>
+                        New Quick Classify and Batch Tracking results will appear here automatically.
+                    </span>
+                </div>
+            </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <aside class="panel glow analytics-side-panel">
+
+            <span class="analytics-eyebrow">RECORD BREAKDOWN</span>
+
+            <h3>Classification Sources</h3>
+
+            <div class="analytics-breakdown-list">
+
+                <div>
+                    <span>
+                        <i class="fa-solid fa-bolt"></i>
+                        Quick Classify
+                    </span>
+
+                    <strong>
+                        {{ classification_summary.quick_classifications }}
+                    </strong>
+                </div>
+
+
+                <div>
+                    <span>
+                        <i class="fa-solid fa-folder-tree"></i>
+                        Batch Tracking
+                    </span>
+
+                    <strong>
+                        {{ classification_summary.batch_classifications }}
+                    </strong>
+                </div>
+
+            </div>
+
+
+            <div class="analytics-stage-section">
+
+                <span class="analytics-eyebrow">GROWTH STAGES</span>
+
+                <div class="analytics-stage-list">
+
+                    <div>
+                        <span>Mid Juvenile</span>
+                        <strong>{{ classification_summary.growth_stage_counts.mid_juvenile }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Juvenile</span>
+                        <strong>{{ classification_summary.growth_stage_counts.juvenile }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Mid Adult / Sub Adult</span>
+                        <strong>
+                            {{
+                                classification_summary.growth_stage_counts.mid_adult
+                                +
+                                classification_summary.growth_stage_counts.sub_adult
+                            }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Adult</span>
+                        <strong>{{ classification_summary.growth_stage_counts.adult }}</strong>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="analytics-quote">
+                <i class="fa-solid fa-quote-left"></i>
+
+                <p>
+                    Every saved classification becomes part of the system's historical record.
+                </p>
+
+                <span>CRAYLIFE ANALYTICS</span>
+            </div>
+
+        </aside>
+
+    </section>
 
 </div>
+
+
+<style>
+
+.analytics-dashboard {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.analytics-dashboard .panel {
+    border-radius: 12px;
+}
+
+
+.analytics-hero {
+    padding: 18px;
+
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+
+    gap: 16px;
+}
+
+.analytics-hero-icon {
+    width: 50px;
+    height: 50px;
+
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.09);
+    color: #0f7f7a;
+
+    font-size: 20px;
+}
+
+.analytics-hero-copy {
+    min-width: 0;
+}
+
+.analytics-hero-copy h2 {
+    margin: 2px 0 3px;
+}
+
+.analytics-hero-copy p {
+    margin: 0;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    opacity: .74;
+}
+
+.analytics-eyebrow {
+    display: inline-block;
+
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.1px;
+
+    opacity: .56;
+}
+
+.analytics-hero-badge,
+.analytics-count-badge {
+    padding: 8px 11px;
+
+    border-radius: 12px;
+
+    background: rgba(15,127,122,.06);
+    border: 1px solid rgba(15,127,122,.10);
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+
+.analytics-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4,minmax(0,1fr));
+
+    gap: 12px;
+}
+
+.analytics-stat-card {
+    min-width: 0;
+    margin: 0;
+    padding: 15px;
+
+    display: flex;
+    align-items: center;
+
+    gap: 12px;
+}
+
+.analytics-stat-icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.08);
+    color: #0f7f7a;
+}
+
+.analytics-stat-card > div:last-child {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.analytics-stat-card span {
+    font-size: 10px;
+    font-weight: 800;
+
+    opacity: .60;
+}
+
+.analytics-stat-card strong {
+    margin: 1px 0;
+
+    font-size: 22px;
+
+    color: #0f4d4c;
+}
+
+.analytics-stat-card small {
+    font-size: 10px;
+
+    opacity: .62;
+}
+
+
+.analytics-content-grid {
+    display: grid;
+    grid-template-columns: minmax(0,1.7fr) minmax(280px,.65fr);
+
+    gap: 16px;
+    align-items: stretch;
+}
+
+.analytics-records-panel,
+.analytics-side-panel {
+    margin: 0;
+    padding: 18px;
+
+    min-width: 0;
+}
+
+.analytics-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+
+    gap: 14px;
+
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+
+    border-bottom: 1px solid rgba(15,127,122,.09);
+}
+
+.analytics-section-header h3,
+.analytics-side-panel h3 {
+    margin: 2px 0 3px;
+}
+
+.analytics-section-header p {
+    margin: 0;
+
+    font-size: 12px;
+
+    opacity: .68;
+}
+
+
+.analytics-record-list {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+}
+
+.analytics-record-row {
+    min-width: 0;
+
+    display: grid;
+
+    grid-template-columns:
+        minmax(180px,1.5fr)
+        repeat(3,minmax(90px,.65fr))
+        minmax(120px,.8fr);
+
+    gap: 10px;
+    align-items: center;
+
+    padding: 10px 12px;
+
+    border-radius: 12px;
+
+    background: rgba(15,127,122,.035);
+    border: 1px solid rgba(15,127,122,.08);
+}
+
+.analytics-record-main {
+    min-width: 0;
+
+    display: flex;
+    align-items: center;
+
+    gap: 10px;
+}
+
+.analytics-record-icon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+
+    border-radius: 10px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(15,127,122,.08);
+    color: #0f7f7a;
+}
+
+.analytics-record-copy,
+.analytics-record-metric,
+.analytics-record-date {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+}
+
+.analytics-record-copy strong,
+.analytics-record-metric strong,
+.analytics-record-date strong {
+    font-size: 11px;
+
+    overflow-wrap: anywhere;
+}
+
+.analytics-record-copy span,
+.analytics-record-metric span,
+.analytics-record-date span {
+    font-size: 9px;
+
+    opacity: .58;
+}
+
+
+.analytics-side-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.analytics-breakdown-list,
+.analytics-stage-list {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+
+    margin-top: 12px;
+}
+
+.analytics-breakdown-list > div,
+.analytics-stage-list > div {
+    padding: 9px 10px;
+
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 10px;
+
+    background: rgba(15,127,122,.04);
+    border: 1px solid rgba(15,127,122,.08);
+}
+
+.analytics-breakdown-list span,
+.analytics-stage-list span {
+    font-size: 11px;
+}
+
+.analytics-breakdown-list strong,
+.analytics-stage-list strong {
+    font-size: 12px;
+}
+
+.analytics-breakdown-list i {
+    width: 16px;
+
+    margin-right: 4px;
+
+    color: #0f7f7a;
+}
+
+.analytics-stage-section {
+    margin-top: 18px;
+}
+
+.analytics-quote {
+    margin-top: auto;
+
+    padding: 14px;
+
+    border-radius: 12px;
+
+    background: rgba(15,127,122,.04);
+    border: 1px solid rgba(15,127,122,.08);
+}
+
+.analytics-quote i {
+    color: #0f7f7a;
+
+    opacity: .70;
+}
+
+.analytics-quote p {
+    margin: 7px 0 6px;
+
+    font-size: 11px;
+    line-height: 1.5;
+
+    opacity: .72;
+}
+
+.analytics-quote span {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1px;
+
+    opacity: .44;
+}
+
+
+.analytics-empty-state {
+    min-height: 180px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 12px;
+}
+
+.analytics-empty-state > i {
+    font-size: 24px;
+
+    color: #0f7f7a;
+}
+
+.analytics-empty-state div {
+    display: flex;
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+.analytics-empty-state span {
+    font-size: 11px;
+
+    opacity: .68;
+}
+
+
+@media (max-width: 1050px) {
+
+    .analytics-summary-grid {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .analytics-content-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .analytics-quote {
+        margin-top: 14px;
+    }
+}
+
+
+@media (max-width: 780px) {
+
+    .analytics-record-row {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .analytics-record-main {
+        grid-column: 1 / -1;
+
+        padding-bottom: 7px;
+
+        border-bottom: 1px solid rgba(15,127,122,.08);
+    }
+}
+
+
+@media (max-width: 600px) {
+
+    .analytics-hero {
+        grid-template-columns: auto 1fr;
+    }
+
+    .analytics-hero-badge {
+        grid-column: 1 / -1;
+
+        width: fit-content;
+    }
+
+    .analytics-summary-grid,
+    .analytics-record-row {
+        grid-template-columns: 1fr;
+    }
+
+    .analytics-record-main {
+        grid-column: auto;
+    }
+
+    .analytics-section-header {
+        flex-direction: column;
+    }
+}
+
+</style>
+
 {% endblock %}

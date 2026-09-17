@@ -3,7 +3,7 @@
 {% block title %}Home - Craylife{% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
+<div class="dashboard-container home-dashboard">
 
     <div class="panel welcome-panel glow dashboard-hero">
         <div class="dashboard-hero-icon">
@@ -29,7 +29,7 @@
         </div>
     </div>
 
-    <div class="panel sensor-panel glow">
+    <div class="panel sensor-panel glow water-monitoring-panel">
         <h2><i class="fa-solid fa-thermometer-half"></i> Water Quality Monitoring</h2>
 
         <p id="last-updated" style="margin-top:6px; opacity:.85;">
@@ -94,6 +94,21 @@
                 <div class="sensor-value big-value" id="sensorStatus">Not connected</div>
                 <div class="sensor-sub strong-sub">Arduino connection state</div>
             </div>
+
+            <div class="sensor-card sensor-card-pretty level-card" data-sensor="Water Level">
+                <div class="sensor-topline">
+                    <div class="sensor-title">
+                        <i class="fa-solid fa-water"></i>
+                        Water Level
+                    </div>
+                    <div class="mini-chip">Tank</div>
+                </div>
+                <div class="sensor-value big-value" id="waterLevelValue">—</div>
+                <div class="sensor-sub strong-sub" id="waterLevelStatus">Unknown</div>
+                <div class="individual-sensor-status" id="waterLevelSensorConnection">
+                    ● Checking...
+                </div>
+            </div>
         </div>
 
         <div class="alert-panel" id="alertPanel" style="
@@ -144,269 +159,270 @@
         </div>
     </div>
 
-    <div class="panel sensor-panel glow" style="margin-top:20px;">
-        <h2><i class="fa-solid fa-water"></i> Water Level Monitoring</h2>
 
-        <div class="sensor-cards sensor-cards-pretty">
-            <div class="sensor-card sensor-card-pretty level-card" data-sensor="Water Level">
-                <div class="sensor-topline">
-                    <div class="sensor-title"><i class="fa-solid fa-water"></i> Water Level</div>
-                    <div class="mini-chip">Tank</div>
-                </div>
-                <div class="sensor-value big-value" id="waterLevelValue">—</div>
-                <div class="sensor-sub strong-sub" id="waterLevelStatus">Unknown</div>
-                <div class="individual-sensor-status" id="waterLevelSensorConnection">
-                    ● Checking...
-                </div>
-            </div>
-        </div>
-    </div>
-
-
-    <div class="panel sensor-panel glow growth-monitoring-panel" style="margin-top:20px;">
-        <div class="growth-monitoring-heading">
+    <div class="panel sensor-panel glow growth-monitoring-panel compact-individual-growth" style="margin-top:20px;">
+        <div class="growth-monitoring-heading compact-growth-heading">
             <div>
-                <h2><i class="fa-solid fa-chart-line"></i> Growth Monitoring</h2>
-                <p>Latest saved growth classification and recent growth-stage history.</p>
+                <span class="compact-section-eyebrow">SOLO CLASSIFICATION</span>
+                <h2>
+                    <i class="fa-solid fa-fish"></i>
+                    Individual Growth Monitoring
+                </h2>
+                <p>
+                    Latest standalone classification and recent growth history.
+                </p>
             </div>
 
-            <a href="{{ url_for('classify') }}" class="btn btn-primary">
-                <i class="fa-solid fa-camera"></i> New Classification
+            <a href="{{ url_for('classify') }}" class="btn btn-primary compact-classify-btn">
+                <i class="fa-solid fa-camera"></i>
+                New Classification
             </a>
         </div>
 
         {% if latest_growth %}
-        <div class="sensor-cards sensor-cards-pretty growth-summary-grid">
-            <div class="sensor-card sensor-card-pretty growth-stage-card">
-                <div class="sensor-topline">
-                    <div class="sensor-title"><i class="fa-solid fa-seedling"></i> Current Growth Stage</div>
-                    <div class="mini-chip">Latest</div>
+
+        <div class="compact-growth-layout">
+
+            <div class="compact-growth-summary-card">
+                <div class="compact-growth-stage">
+                    <span class="compact-label">Current Growth Stage</span>
+                    <strong>
+                        {{ latest_growth.growth.replace('_', ' ').title() }}
+                    </strong>
+                    <small>
+                        {{ '%.2f'|format(latest_growth.growth_confidence or 0) }}%
+                        model confidence
+                    </small>
                 </div>
-                <div class="sensor-value big-value">
-                    {{ latest_growth.growth.replace('_', ' ').title() }}
+
+                <div class="compact-growth-meta">
+                    <div>
+                        <span>Last Checked</span>
+                        <strong>
+                            {{ latest_growth.created_at|ph_time('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Time</span>
+                        <strong>
+                            {{ latest_growth.created_at|ph_time('%I:%M %p') if latest_growth.created_at else '—' }}
+                        </strong>
+                    </div>
                 </div>
-                <div class="sensor-sub strong-sub">Most recent model classification</div>
             </div>
 
-            <div class="sensor-card sensor-card-pretty growth-confidence-card">
-                <div class="sensor-topline">
-                    <div class="sensor-title"><i class="fa-solid fa-gauge-high"></i> Growth Confidence</div>
-                    <div class="mini-chip">Model</div>
+            <div class="compact-growth-chart">
+                <div class="compact-subhead">
+                    <span>Growth Stage Trend</span>
                 </div>
-                <div class="sensor-value big-value">
-                    {{ '%.2f'|format(latest_growth.growth_confidence or 0) }}%
-                </div>
-                <div class="sensor-sub strong-sub">Prediction confidence</div>
+
+                <canvas id="growthStageChart" height="92"></canvas>
             </div>
 
-            <div class="sensor-card sensor-card-pretty growth-date-card">
-                <div class="sensor-topline">
-                    <div class="sensor-title"><i class="fa-solid fa-clock"></i> Last Checked</div>
-                    <div class="mini-chip">Saved</div>
+            <div class="compact-growth-history">
+                <div class="compact-subhead">
+                    <span>Recent Updates</span>
                 </div>
-                <div class="sensor-value growth-date-value">
-                    {{ latest_growth.created_at.strftime('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
-                </div>
-                <div class="sensor-sub strong-sub">
-                    {{ latest_growth.created_at.strftime('%I:%M %p') if latest_growth.created_at else '' }}
+
+                <div class="compact-growth-history-list">
+                    {% for log in growth_logs[:4] %}
+                    <div class="compact-growth-history-item">
+                        <div>
+                            <strong>
+                                {{ log.growth.replace('_', ' ').title() }}
+                            </strong>
+                            <small>
+                                {{ '%.2f'|format(log.growth_confidence or 0) }}%
+                            </small>
+                        </div>
+
+                        <time>
+                            {{ log.created_at|ph_time('%b %d') if log.created_at else '—' }}
+                        </time>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
-        </div>
 
-        <div class="growth-chart-wrap">
-            <canvas id="growthStageChart" height="115"></canvas>
         </div>
 
         <script id="growthChartLabelsData" type="application/json">{{ growth_chart_labels|tojson }}</script>
         <script id="growthChartValuesData" type="application/json">{{ growth_chart_values|tojson }}</script>
 
-        <div class="growth-history-wrap">
-            <h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Growth Updates</h3>
-            <div class="growth-history-list">
-                {% for log in growth_logs[:5] %}
-                <div class="growth-history-item">
-                    <div>
-                        <strong>{{ log.growth.replace('_', ' ').title() }}</strong>
-                        <span>{{ '%.2f'|format(log.growth_confidence or 0) }}% confidence</span>
-                    </div>
-                    <time>
-                        {{ log.created_at.strftime('%b %d, %Y %I:%M %p') if log.created_at else 'Unknown' }}
-                    </time>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
         {% else %}
-        <div class="growth-empty-state">
+
+        <div class="compact-growth-empty">
             <i class="fa-solid fa-fish"></i>
+
             <div>
-                <h3>No growth record yet</h3>
-                <p>Classify a crayfish image to display its growth stage and monitoring history here.</p>
+                <strong>No individual growth record yet</strong>
+                <span>
+                    Classify a standalone crayfish image to show its latest growth result here.
+                </span>
             </div>
         </div>
+
         {% endif %}
     </div>
 
-    <div class="panel sensor-panel glow weekly-growth-panel" style="margin-top:20px;">
+    <div class="panel sensor-panel glow live-growth-panel" style="margin-top:20px;">
 
-        <div class="weekly-growth-header">
+        <div class="live-growth-header">
 
-            <div class="weekly-growth-header-icon">
+            <div class="live-growth-header-icon">
                 <i class="fa-solid fa-chart-line"></i>
             </div>
 
-            <div class="weekly-growth-header-copy">
-                <span class="weekly-growth-eyebrow">
-                    LIVE BATCH TRACKING
+            <div class="live-growth-header-copy">
+                <span class="live-growth-eyebrow">
+                    LIVE GROWTH PROJECTION
                 </span>
 
                 <h2>
-                    Batch Growth Tracking
+                    Batch Growth Monitoring
                 </h2>
 
                 <p>
-                    Automatically updated from actual images
-                    classified under each batch.
+                    Growth projection updates from the latest verified image record.
+                    Actual growth is confirmed by a new eligible image observation every 14 days.
                 </p>
             </div>
 
         </div>
 
-
         {% if batch_growth_summaries %}
 
-        <div class="weekly-growth-grid">
+        <div class="live-growth-grid">
 
             {% for item in batch_growth_summaries %}
 
-            <div class="weekly-batch-panel">
+            <article class="live-growth-card">
 
-                <div class="weekly-batch-panel-header">
+                <div class="live-growth-card-top">
+                    <div>
+                        <span class="live-growth-batch-label">
+                            Tracked Batch
+                        </span>
 
-                    <div class="weekly-batch-name">
-
-                        <div class="weekly-batch-icon">
-                            <i class="fa-solid fa-box"></i>
-                        </div>
-
-                        <div>
-                            <span>Tracked Batch</span>
-                            <h3>
-                                {{ item.batch_name }}
-                            </h3>
-                        </div>
-
+                        <h3>{{ item.batch_name }}</h3>
                     </div>
 
-                    <span class="weekly-week-badge">
-                        Observation
-                        {{ item.week_number }}
+                    <span class="live-growth-status
+                        {% if item.verification_due %}
+                            verification-due
+                        {% elif item.growth_status == 'PROVISIONAL OBSERVATION' %}
+                            provisional
+                        {% elif item.growth_status == 'LIVE PROJECTION' %}
+                            projecting
+                        {% else %}
+                            baseline
+                        {% endif %}
+                    ">
+                        {{ item.growth_status }}
                     </span>
-
                 </div>
 
-
-            
-
-
-                <div class="weekly-stat-box-grid">
-
-                    <div class="weekly-stat-box">
-
-                        <div class="weekly-stat-icon">
-                            <i class="fa-solid fa-ruler"></i>
+                <div class="growth-cycle-box">
+                    <div class="growth-cycle-topline">
+                        <div>
+                            <span>14-Day Monitoring Cycle</span>
+                            <strong>
+                                Day {{ item.cycle_day }} of {{ item.cycle_total_days }}
+                            </strong>
                         </div>
 
-                        <span>
-                            Current Length
+                        <span class="cycle-percent">
+                            {{ '%.0f'|format(item.cycle_progress_percent) }}%
                         </span>
-
-                        <strong>
-                            {% if item.current_length_cm is not none %}
-                                {{ '%.1f'|format(item.current_length_cm) }} cm
-                            {% else %}
-                                —
-                            {% endif %}
-                        </strong>
-
                     </div>
 
+                    <progress
+                        class="growth-progress-track"
+                        value="{{ item.cycle_progress_percent }}"
+                        max="100"
+                        aria-label="Growth cycle progress"
+                    >
+                        {{ item.cycle_progress_percent }}%
+                    </progress>
 
-                    <div class="weekly-stat-box">
+                    <div class="growth-cycle-footer">
+                        {% if item.verification_due %}
+                            <span>
+                                <i class="fa-solid fa-camera"></i>
+                                New verification image is due now.
+                            </span>
+                        {% else %}
+                            <span>
+                                <i class="fa-solid fa-clock"></i>
+                                {{ item.days_remaining }} day(s) until next official verification
+                            </span>
+                        {% endif %}
 
-                        <div class="weekly-stat-icon">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </div>
-
-                        <span>
-                            Previous Length
-                        </span>
-
-                        <strong>
-                            {% if item.previous_length_cm is not none %}
-                                {{ '%.1f'|format(item.previous_length_cm) }} cm
-                            {% else %}
-                                First record
-                            {% endif %}
-                        </strong>
-
+                        {% if item.next_verification_date %}
+                            <strong>
+                                {{ item.next_verification_date|ph_time('%b %d, %Y') }}
+                            </strong>
+                        {% endif %}
                     </div>
-
-
-                    <div class="weekly-stat-box">
-
-                        <div class="weekly-stat-icon">
-                            <i class="fa-solid fa-arrow-trend-up"></i>
-                        </div>
-
-                        <span>
-                            Size Change
-                        </span>
-
-                        <strong>
-                            {% if item.length_change_cm is not none %}
-                                {% if item.length_change_cm > 0 %}+{% endif %}
-                                {{ '%.1f'|format(item.length_change_cm) }} cm
-                            {% else %}
-                                —
-                            {% endif %}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="weekly-stat-box">
-
-                        <div class="weekly-stat-icon">
-                            <i class="fa-solid fa-calendar-days"></i>
-                        </div>
-
-                        <span>
-                            Time Since Previous
-                        </span>
-
-                        <strong>
-                            {% if item.elapsed_days is not none %}
-                                {{ item.elapsed_days }} day(s)
-                            {% else %}
-                                —
-                            {% endif %}
-                        </strong>
-
-                    </div>
-
                 </div>
 
+                <div class="live-growth-stat-grid">
 
-                <div class="weekly-detail-boxes">
+                    <div class="live-growth-stat">
+                        <span>Last Verified Length</span>
+                        <strong>
+                            {% if item.last_verified_length_cm is not none %}
+                                {{ '%.1f'|format(item.last_verified_length_cm) }} cm
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
 
-                    <div class="weekly-detail-box">
+                        <small>
+                            {% if item.last_verified_date %}
+                                {{ item.last_verified_date|ph_time('%b %d, %Y') }}
+                            {% else %}
+                                No verified date
+                            {% endif %}
+                        </small>
+                    </div>
 
-                        <span>
-                            <i class="fa-solid fa-seedling"></i>
-                            Current Growth Stage
-                        </span>
+                    <div class="live-growth-stat prediction-stat">
+                        <span>Predicted Current Length</span>
+                        <strong>
+                            {% if item.predicted_current_length_cm is not none %}
+                                {{ '%.2f'|format(item.predicted_current_length_cm) }} cm
+                            {% else %}
+                                Awaiting trend
+                            {% endif %}
+                        </strong>
 
+                        <small>
+                            {% if item.daily_growth_rate_cm is not none %}
+                                {{ '%+.3f'|format(item.daily_growth_rate_cm) }} cm/day trend
+                            {% else %}
+                                Needs two verified checks to calculate a growth rate
+                            {% endif %}
+                        </small>
+                    </div>
+
+                    <div class="live-growth-stat">
+                        <span>Projected Change</span>
+                        <strong>
+                            {% if item.projected_change_cm is not none %}
+                                {% if item.projected_change_cm > 0 %}+{% endif %}
+                                {{ '%.2f'|format(item.projected_change_cm) }} cm
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+
+                        <small>Since latest verified record</small>
+                    </div>
+
+                    <div class="live-growth-stat">
+                        <span>Current Stage</span>
                         <strong>
                             {% if item.growth_stage %}
                                 {{ item.growth_stage.replace('_', ' ').title() }}
@@ -415,96 +431,100 @@
                             {% endif %}
                         </strong>
 
-                    </div>
-
-
-                    <div class="weekly-detail-box">
-
-                        <span>
-                            <i class="fa-solid fa-fish"></i>
-                            Batch Population
-                        </span>
-
-                        <strong>
-                            {{ item.batch_quantity or 0 }}
-                        </strong>
-
+                        <small>
+                            {% if item.growth_confidence is not none %}
+                                {{ '%.1f'|format(item.growth_confidence) }}% model confidence
+                            {% else %}
+                                No confidence value
+                            {% endif %}
+                        </small>
                     </div>
 
                 </div>
 
-
-                <div class="weekly-live-status-row">
-
+                {% if item.provisional_length_cm is not none %}
+                <div class="provisional-observation-box">
                     <div>
-                        <span class="weekly-live-status-label">
-                            Growth Status
-                        </span>
-
-                        <strong>
-                            {{ item.growth_status }}
-                        </strong>
-                    </div>
-
-                    {% if item.growth_confidence is not none %}
-
-                    <div class="weekly-confidence-box">
                         <span>
-                            Growth Confidence
+                            <i class="fa-solid fa-camera-retro"></i>
+                            Latest Provisional Observation
                         </span>
 
                         <strong>
-                            {{ '%.1f'|format(item.growth_confidence) }}%
+                            {{ '%.1f'|format(item.provisional_length_cm) }} cm
                         </strong>
                     </div>
 
-                    {% endif %}
+                    <p>
+                        This image was saved before the next 14-day verification point.
+                        It stays in history but does not replace the official growth reference.
+                    </p>
+                </div>
+                {% endif %}
 
+                <div class="batch-projection-chart-wrap">
+                    <div class="batch-chart-heading">
+                        <span>Growth Timeline</span>
+                        <small>
+                            Solid = verified &nbsp; • &nbsp; Dashed = projected
+                        </small>
+                    </div>
+
+                    <canvas
+                        class="batch-projection-chart"
+                        id="batchProjectionChart-{{ item.batch_id }}"
+                        data-batch-id="{{ item.batch_id }}"
+                        height="105"
+                    ></canvas>
+
+                    <script
+                        id="batchProjectionData-{{ item.batch_id }}"
+                        type="application/json"
+                    >{{ {
+                        'labels': item.chart_labels,
+                        'actual': item.chart_actual,
+                        'projection': item.chart_projection
+                    }|tojson }}</script>
                 </div>
 
+                <div class="live-growth-card-footer">
+                    <div class="live-growth-meta">
+                        <span>
+                            <i class="fa-solid fa-images"></i>
+                            {{ item.observation_count }} observation(s)
+                        </span>
 
-                <div class="weekly-batch-footer">
+                        <span>
+                            <i class="fa-solid fa-circle-check"></i>
+                            {{ item.official_check_count }} verified point(s)
+                        </span>
+                    </div>
 
                     <a
-                        href="{{ url_for(
-                            'batch_detail',
-                            batch_id=item.batch_id
-                        ) }}"
-                        class="weekly-growth-button"
+                        href="{{ url_for('batch_detail', batch_id=item.batch_id) }}"
+                        class="live-growth-history-btn"
                     >
                         <i class="fa-solid fa-folder-open"></i>
                         View Batch History
                     </a>
-
                 </div>
 
-            </div>
+            </article>
 
             {% endfor %}
 
         </div>
 
-
         {% else %}
 
-        <div class="weekly-empty-panel">
-
-            <div class="weekly-empty-icon">
-                <i class="fa-solid fa-images"></i>
-            </div>
-
+        <div class="growth-empty-state">
+            <i class="fa-solid fa-images"></i>
             <div>
-                <h3>
-                    No tracked batch observations yet
-                </h3>
-
+                <h3>No tracked batch observations yet</h3>
                 <p>
-                    Use Classify with Batch Tracking.
-                    Once an image is saved under a batch,
-                    its growth information will appear here automatically.
+                    Add a batch observation to begin the 14-day growth monitoring cycle.
                 </p>
             </div>
-
         </div>
 
         {% endif %}
@@ -589,20 +609,9 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
 <script>
-  let socket = null;
-
-  if (typeof io !== "undefined") {
-    try {
-      socket = io();
-    } catch (e) {
-      console.error("Socket.IO init failed:", e);
-      socket = null;
-    }
-  } else {
-    console.error("Socket.IO client failed to load");
-  }
-
-  let phChart = null;
+  // Sensor dashboard uses HTTP polling as the single source of truth.
+  // Socket.IO is intentionally not used for sensor state here.
+let phChart = null;
   const phLabels = [];
   const phValues = [];
   const PH_MAX_POINTS = 5;
@@ -630,37 +639,219 @@
   let lastBeepAt = 0;
   let phWasOutOfRange = false;
 
-  let lastUpdateTime = null;
+  // ============================================================
+  // DASHBOARD SENSOR STATE
+  //
+  // CONNECTION RULE:
+  // - If at least one real sensor reading is received -> Connected.
+  // - Repeated/unchanged values are still valid and stay Connected.
+  // - One temporary empty/bad response does NOT immediately disconnect.
+  // - Disconnected only after no valid sensor data has been received
+  //   for SENSOR_DISCONNECT_AFTER_MS.
+  // ============================================================
+  let lastValidSensorAt = null;
+  let lastReadingChangeTime = null;
+  let previousReadingSignature = null;
+  let lastGoodSensorData = null;
+
+  const SENSOR_DISCONNECT_AFTER_MS = 12000;
+  const SENSOR_REFRESH_MS = 5000;
+
   const lastUpdatedEl = document.getElementById("last-updated-seconds");
   const liveIndicatorEl = document.getElementById("live-indicator");
-  const STALE_SECONDS = 15;
 
-  function updateLastUpdatedUI() {
-    if (!lastUpdatedEl || !liveIndicatorEl) return;
+  function isMissingValue(value) {
+    if (value === undefined || value === null) return true;
 
-    if (!lastUpdateTime) {
-      lastUpdatedEl.textContent = "—";
-      liveIndicatorEl.textContent = "●";
-      liveIndicatorEl.style.opacity = 0.5;
-      liveIndicatorEl.style.filter = "grayscale(1)";
-      return;
+    const normalized = String(value)
+      .trim()
+      .toLowerCase();
+
+    return [
+      "",
+      "—",
+      "-",
+      "unknown",
+      "disconnected",
+      "not connected",
+      "none",
+      "null"
+    ].includes(normalized);
+  }
+
+  function hasValidSensorData(data) {
+    if (!data || typeof data !== "object") return false;
+
+    const candidates = [
+      data["pH Level"],
+      data["Water Level"],
+      data["Water Quality"],
+      data["Turbidity NTU"],
+      data["Temperature"]
+    ];
+
+    return candidates.some(value => !isMissingValue(value));
+  }
+
+  function buildReadingSignature(data) {
+    return JSON.stringify({
+      ph: data["pH Level"] ?? null,
+      waterLevel: data["Water Level"] ?? null,
+      waterQuality: data["Water Quality"] ?? null,
+      turbidity: data["Turbidity NTU"] ?? null,
+      temperature: data["Temperature"] ?? null
+    });
+  }
+
+  function mergeWithLastGoodData(data) {
+    if (!lastGoodSensorData) {
+      return { ...(data || {}) };
     }
 
-    const secs = Math.floor((Date.now() - lastUpdateTime) / 1000);
-    lastUpdatedEl.textContent = `${secs}s ago`;
+    const merged = { ...lastGoodSensorData };
 
-    if (secs >= STALE_SECONDS) {
-      liveIndicatorEl.textContent = "● Disconnected";
-      liveIndicatorEl.style.opacity = 1;
-      liveIndicatorEl.style.filter = "grayscale(1)";
-    } else {
-      liveIndicatorEl.textContent = "● Live";
-      liveIndicatorEl.style.opacity = 1;
-      liveIndicatorEl.style.filter = "none";
+    Object.entries(data || {}).forEach(([key, value]) => {
+      if (!isMissingValue(value)) {
+        merged[key] = value;
+      }
+    });
+
+    return merged;
+  }
+
+  function registerValidPayload(data) {
+    lastValidSensorAt = Date.now();
+
+    const signature = buildReadingSignature(data);
+
+    if (previousReadingSignature === null) {
+      previousReadingSignature = signature;
+      lastReadingChangeTime = Date.now();
+    } else if (signature !== previousReadingSignature) {
+      previousReadingSignature = signature;
+      lastReadingChangeTime = Date.now();
+    }
+
+    lastGoodSensorData = mergeWithLastGoodData(data);
+  }
+
+  function isBoardConnected() {
+    if (!lastValidSensorAt) return false;
+
+    return (
+      Date.now() - lastValidSensorAt
+    ) < SENSOR_DISCONNECT_AFTER_MS;
+  }
+
+  function updateConnectionUI(connected) {
+    if (liveIndicatorEl) {
+      liveIndicatorEl.textContent = connected
+        ? "● Live"
+        : "● Disconnected";
+
+      liveIndicatorEl.style.opacity = "1";
+      liveIndicatorEl.style.filter = connected
+        ? "none"
+        : "grayscale(1)";
+    }
+
+    const statusEl = document.getElementById("sensorStatus");
+
+    if (statusEl) {
+      statusEl.textContent = connected
+        ? "Connected"
+        : "Disconnected";
+
+      statusEl.style.fontWeight = "800";
     }
   }
 
-  setInterval(updateLastUpdatedUI, 1000);
+  function updateLastUpdatedUI() {
+    if (!lastUpdatedEl) return;
+
+    if (!lastReadingChangeTime) {
+      lastUpdatedEl.textContent = "—";
+      return;
+    }
+
+    const secs = Math.floor(
+      (Date.now() - lastReadingChangeTime) / 1000
+    );
+
+    lastUpdatedEl.textContent = `${secs}s ago`;
+  }
+
+  function formatTwoDecimals(value) {
+    if (isMissingValue(value)) {
+      return "—";
+    }
+
+    const numeric = Number(
+      String(value).replace(/[^0-9.-]/g, "")
+    );
+
+    if (!Number.isFinite(numeric)) {
+      return String(value);
+    }
+
+    return numeric.toFixed(2);
+  }
+
+  function clearSensorDisplayForDisconnect() {
+    const phEl = document.getElementById("phValue");
+    const phStatusEl = document.getElementById("phStatus");
+    const wlEl = document.getElementById("waterLevelValue");
+    const wlsEl = document.getElementById("waterLevelStatus");
+    const waterQualityEl = document.getElementById("waterQualityValue");
+    const temperatureEl = document.getElementById("temperatureValue");
+    const temperatureStatusEl = document.getElementById("temperatureStatus");
+
+    if (phEl) phEl.textContent = "—";
+    if (phStatusEl) phStatusEl.textContent = "Disconnected";
+    if (wlEl) wlEl.textContent = "—";
+    if (wlsEl) wlsEl.textContent = "Disconnected";
+    if (waterQualityEl) waterQualityEl.textContent = "—";
+    if (temperatureEl) temperatureEl.textContent = "—";
+
+    if (temperatureStatusEl) {
+      updateTemperatureStatusBadge(
+        temperatureStatusEl,
+        "UNKNOWN"
+      );
+    }
+
+    updateSensorConnection(
+      document.getElementById("phSensorConnection"),
+      "Disconnected"
+    );
+
+    updateSensorConnection(
+      document.getElementById("waterLevelSensorConnection"),
+      "Disconnected"
+    );
+
+    updateSensorConnection(
+      document.getElementById("turbiditySensorConnection"),
+      "Disconnected"
+    );
+
+    updateSensorConnection(
+      document.getElementById("temperatureSensorConnection"),
+      "Disconnected"
+    );
+  }
+
+  setInterval(() => {
+    const connected = isBoardConnected();
+    updateConnectionUI(connected);
+    updateLastUpdatedUI();
+
+    if (!connected && lastValidSensorAt !== null) {
+      clearSensorDisplayForDisconnect();
+    }
+  }, 1000);
+
+  updateConnectionUI(false);
   updateLastUpdatedUI();
 
   let toastTimer = null;
@@ -826,16 +1017,21 @@
   }
 
   function applySensorData(data) {
-    const status = data["Status"] || "Not connected";
-    const boardConnected = String(status)
-      .trim()
-      .toLowerCase() === "connected";
+    const validPayload = hasValidSensorData(data);
 
-    if (boardConnected) {
-      lastUpdateTime = Date.now();
-    } else {
-      lastUpdateTime = null;
+    if (validPayload) {
+      registerValidPayload(data);
     }
+
+    const boardConnected = isBoardConnected();
+
+    // While still inside the grace period, keep showing the last good values
+    // instead of letting one empty/transient payload blank the dashboard.
+    const displayData = boardConnected
+      ? mergeWithLastGoodData(data)
+      : (data || {});
+
+    updateConnectionUI(boardConnected);
     updateLastUpdatedUI();
 
     const phEl = document.getElementById("phValue");
@@ -848,25 +1044,41 @@
     const turbidityConnectionEl = document.getElementById("turbiditySensorConnection");
     const temperatureConnectionEl = document.getElementById("temperatureSensorConnection");
 
-    const rawPh = data["pH Level"];
-    const phStatus = data["pH Status"] || "Unknown";
-    const phSensorStatus = data["pH Sensor Status"] || "Disconnected";
-    const waterSensorStatus = data["Water Level Sensor Status"] || "Disconnected";
-    const turbiditySensorStatus = data["Turbidity Sensor Status"] || "Disconnected";
-    const temperatureSensorStatus = data["Temperature Sensor Status"]
-      || (data["Temperature"] !== undefined && data["Temperature"] !== "—"
+    const rawPh = displayData["pH Level"];
+    const phStatus = displayData["pH Status"] || "Unknown";
+    const phSensorStatus =
+      boardConnected && !isMissingValue(displayData["pH Level"])
         ? "Connected"
-        : "Disconnected");
+        : "Disconnected";
 
-    updateSensorConnection(phConnectionEl, phSensorStatus);
+    const waterSensorStatus =
+      boardConnected && !isMissingValue(displayData["Water Level"])
+        ? "Connected"
+        : "Disconnected";
+
+    const turbiditySensorStatus =
+      boardConnected && (
+        !isMissingValue(displayData["Water Quality"])
+        || !isMissingValue(displayData["Turbidity NTU"])
+      )
+        ? "Connected"
+        : "Disconnected";
+
+    const temperatureSensorStatus =
+      boardConnected && !isMissingValue(displayData["Temperature"])
+        ? "Connected"
+        : "Disconnected";
+
+updateSensorConnection(phConnectionEl, phSensorStatus);
     updateSensorConnection(waterConnectionEl, waterSensorStatus);
     updateSensorConnection(turbidityConnectionEl, turbiditySensorStatus);
     updateSensorConnection(temperatureConnectionEl, temperatureSensorStatus);
 
     if (phEl) {
-      phEl.textContent = String(phSensorStatus).toLowerCase() === "connected"
-        ? (rawPh ?? "—")
-        : "—";
+      phEl.textContent =
+        phSensorStatus === "Connected"
+          ? formatTwoDecimals(rawPh)
+          : "—";
     }
 
     if (phStatusEl) {
@@ -880,6 +1092,12 @@
       statusEl.style.fontWeight = "800";
     }
 
+    if (!boardConnected) {
+      previousReadingSignature = null;
+      lastReadingChangeTime = null;
+      updateLastUpdatedUI();
+    }
+
     const wlEl = document.getElementById("waterLevelValue");
     const wlsEl = document.getElementById("waterLevelStatus");
     const waterQualityEl = document.getElementById("waterQualityValue");
@@ -888,19 +1106,19 @@
 
     if (wlEl) {
       wlEl.textContent = String(waterSensorStatus).toLowerCase() === "connected"
-        ? (data["Water Level"] ?? "—")
+        ? (displayData["Water Level"] ?? "—")
         : "—";
     }
 
     if (wlsEl) {
       wlsEl.textContent = String(waterSensorStatus).toLowerCase() === "connected"
-        ? (data["Water Status"] || "Unknown")
+        ? (displayData["Water Status"] || "Unknown")
         : "Disconnected";
     }
 
     if (waterQualityEl) {
       waterQualityEl.textContent = String(turbiditySensorStatus).toLowerCase() === "connected"
-        ? String(data["Water Quality"] || "—").toUpperCase()
+        ? String(displayData["Water Quality"] || "—").toUpperCase()
         : "—";
     }
 
@@ -910,7 +1128,7 @@
           temperatureSensorStatus
         ).toLowerCase() === "connected";
 
-      const rawTemperature = data["Temperature"];
+      const rawTemperature = displayData["Temperature"];
 
       const derivedTemperatureStatus =
         data["Temperature Status"]
@@ -922,7 +1140,7 @@
               rawTemperature !== undefined
               && rawTemperature !== null
               && rawTemperature !== "—"
-                ? `${rawTemperature} °C`
+                ? `${formatTwoDecimals(rawTemperature)} °C`
                 : "—"
             )
           : "—";
@@ -943,20 +1161,20 @@
     const alertRecEl = document.getElementById("alertRecommendation");
     const alertPanel = document.getElementById("alertPanel");
 
-    if (alertLevelEl && data["Alert Level"]) {
-      alertLevelEl.textContent = data["Alert Level"];
+    if (alertLevelEl && displayData["Alert Level"]) {
+      alertLevelEl.textContent = displayData["Alert Level"];
     }
 
-    if (alertMsgEl && data["Alert Message"]) {
-      alertMsgEl.textContent = data["Alert Message"];
+    if (alertMsgEl && displayData["Alert Message"]) {
+      alertMsgEl.textContent = displayData["Alert Message"];
     }
 
-    if (alertRecEl && data["Recommendation"]) {
-      alertRecEl.textContent = data["Recommendation"];
+    if (alertRecEl && displayData["Recommendation"]) {
+      alertRecEl.textContent = displayData["Recommendation"];
     }
 
     if (alertPanel) {
-      const level = (data["Alert Level"] || "").toUpperCase();
+      const level = (displayData["Alert Level"] || "").toUpperCase();
 
       if (level === "CRITICAL") {
         alertPanel.style.border = "1px solid #ff4d4d";
@@ -1019,22 +1237,38 @@
       }
     }
   }
+  function fetchSensorData() {
+    fetch("/arduino-data", {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache"
+      }
+    })
+      .then(r => {
+        if (!r.ok) {
+          throw new Error(
+            `Sensor request failed: ${r.status}`
+          );
+        }
 
-  if (socket) {
-    socket.on("sensor_update", applySensorData);
+        return r.json();
+      })
+      .then(d => {
+        applySensorData(d || {});
+      })
+      .catch(err => {
+        console.error("Fetch failed:", err);
+
+        // Do not immediately disconnect on one failed request.
+        // The 12-second no-valid-data timeout handles real disconnection.
+      });
   }
 
-  fetch("/arduino-data", { cache: "no-store" })
-    .then(r => r.json())
-    .then(d => applySensorData(d || {}))
-    .catch(err => console.error("Fetch failed:", err));
-
-  setInterval(() => {
-    fetch("/arduino-data", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => applySensorData(d || {}))
-      .catch(err => console.error("Fetch failed:", err));
-  }, 5000);
+  fetchSensorData();
+  setInterval(
+    fetchSensorData,
+    SENSOR_REFRESH_MS
+  );
 
   if (exportBtn) {
     exportBtn.addEventListener("click", () => {
@@ -1060,7 +1294,11 @@
 
   function exportAllSensorsCSV() {
     const stampISO = new Date().toISOString();
-    const secsAgo = (lastUpdateTime ? Math.floor((Date.now() - lastUpdateTime) / 1000) : "");
+    const secsAgo = (
+      lastReadingChangeTime
+        ? Math.floor((Date.now() - lastReadingChangeTime) / 1000)
+        : ""
+    );
 
     const currentPH = document.getElementById("phValue")?.textContent ?? "";
     const currentPHStatus = document.getElementById("phStatus")?.textContent ?? "";
@@ -1184,8 +1422,104 @@
     });
   }
 
+  function initBatchProjectionCharts() {
+    if (typeof Chart === "undefined") return;
+
+    document
+      .querySelectorAll(".batch-projection-chart")
+      .forEach(canvas => {
+        const batchId = canvas.dataset.batchId;
+        const dataElement = document.getElementById(
+          `batchProjectionData-${batchId}`
+        );
+
+        if (!dataElement) return;
+
+        let chartData = null;
+
+        try {
+          chartData = JSON.parse(
+            dataElement.textContent || "{}"
+          );
+        } catch (error) {
+          console.error(
+            "Batch projection chart data is invalid:",
+            error
+          );
+          return;
+        }
+
+        const labels = chartData.labels || [];
+        const actual = chartData.actual || [];
+        const projection = chartData.projection || [];
+
+        if (!labels.length) return;
+
+        new Chart(canvas.getContext("2d"), {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: "Verified Length",
+                data: actual,
+                fill: false,
+                tension: 0.25,
+                pointRadius: 4,
+                spanGaps: false
+              },
+              {
+                label: "Projected Length",
+                data: projection,
+                fill: false,
+                tension: 0.25,
+                pointRadius: 3,
+                borderDash: [7, 6],
+                spanGaps: true
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              mode: "index",
+              intersect: false
+            },
+            plugins: {
+              legend: {
+                display: true,
+                labels: {
+                  boxWidth: 12,
+                  usePointStyle: true
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    if (context.raw === null) return null;
+                    return `${context.dataset.label}: ${Number(context.raw).toFixed(2)} cm`;
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: false,
+                title: {
+                  display: true,
+                  text: "Length (cm)"
+                }
+              }
+            }
+          }
+        });
+      });
+  }
+
   initMiniChart();
   initGrowthChart();
+  initBatchProjectionCharts();
 </script>
 
 <style>
@@ -2046,6 +2380,896 @@
 
   .weekly-confidence-box {
     text-align: right;
+  }
+
+
+
+  /* =========================================
+     LIVE 14-DAY GROWTH PROJECTION
+     ========================================= */
+
+  .live-growth-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .live-growth-header-icon {
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    background: rgba(15, 127, 122, .12);
+    font-size: 20px;
+  }
+
+  .live-growth-eyebrow,
+  .live-growth-batch-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    opacity: .72;
+  }
+
+  .live-growth-header-copy h2 {
+    margin: 3px 0 4px;
+  }
+
+  .live-growth-header-copy p {
+    margin: 0;
+    max-width: 760px;
+    opacity: .78;
+    line-height: 1.55;
+  }
+
+  .live-growth-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+  }
+
+  .live-growth-card {
+    padding: 19px;
+    border-radius: 18px;
+    background: linear-gradient(
+      145deg,
+      rgba(255,255,255,.10),
+      rgba(255,255,255,.045)
+    );
+    border: 1px solid rgba(255,255,255,.11);
+    box-shadow: 0 10px 24px rgba(0,0,0,.13);
+  }
+
+  .live-growth-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .live-growth-card-top h3 {
+    margin: 4px 0 0;
+    font-size: 19px;
+  }
+
+  .live-growth-status {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .35px;
+    border: 1px solid transparent;
+  }
+
+  .live-growth-status.baseline {
+    background: rgba(52,152,219,.12);
+    border-color: rgba(52,152,219,.23);
+    color: #0f5f7f;
+  }
+
+  .live-growth-status.projecting {
+    background: rgba(25,135,84,.13);
+    border-color: rgba(25,135,84,.23);
+    color: #157347;
+  }
+
+  .live-growth-status.provisional {
+    background: rgba(245,158,11,.14);
+    border-color: rgba(245,158,11,.25);
+    color: #8a5a00;
+  }
+
+  .live-growth-status.verification-due {
+    background: rgba(220,53,69,.13);
+    border-color: rgba(220,53,69,.25);
+    color: #b02a37;
+  }
+
+  .growth-cycle-box {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(15,127,122,.06);
+    border: 1px solid rgba(15,127,122,.11);
+  }
+
+  .growth-cycle-topline,
+  .growth-cycle-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .growth-cycle-topline > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .growth-cycle-topline span,
+  .growth-cycle-footer span,
+  .growth-cycle-footer strong {
+    font-size: 12px;
+  }
+
+  .cycle-percent {
+    font-weight: 900;
+  }
+
+  .growth-progress-track {
+    width: 100%;
+    height: 9px;
+    margin: 12px 0 10px;
+    border: 0;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(15,127,122,.12);
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .growth-progress-track::-webkit-progress-bar {
+    background: rgba(15,127,122,.12);
+    border-radius: 999px;
+  }
+
+  .growth-progress-track::-webkit-progress-value {
+    background: linear-gradient(90deg, #0f7f7a, #159f91);
+    border-radius: 999px;
+  }
+
+  .growth-progress-track::-moz-progress-bar {
+    background: linear-gradient(90deg, #0f7f7a, #159f91);
+    border-radius: 999px;
+  }
+
+  .live-growth-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px;
+    margin-top: 14px;
+  }
+
+  .live-growth-stat {
+    padding: 13px;
+    border-radius: 13px;
+    background: rgba(255,255,255,.065);
+    border: 1px solid rgba(255,255,255,.09);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .live-growth-stat span {
+    font-size: 11px;
+    font-weight: 800;
+    opacity: .70;
+  }
+
+  .live-growth-stat strong {
+    font-size: 17px;
+  }
+
+  .live-growth-stat small {
+    font-size: 11px;
+    opacity: .68;
+    line-height: 1.35;
+  }
+
+  .prediction-stat {
+    border-color: rgba(15,127,122,.18);
+    background: rgba(15,127,122,.07);
+  }
+
+  .provisional-observation-box {
+    margin-top: 14px;
+    padding: 13px;
+    border-radius: 13px;
+    background: rgba(245,158,11,.08);
+    border: 1px solid rgba(245,158,11,.18);
+  }
+
+  .provisional-observation-box > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .provisional-observation-box span {
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .provisional-observation-box p {
+    margin: 7px 0 0;
+    font-size: 12px;
+    opacity: .74;
+    line-height: 1.45;
+  }
+
+  .batch-projection-chart-wrap {
+    height: 235px;
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.09);
+  }
+
+  .batch-chart-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .batch-chart-heading span {
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .batch-chart-heading small {
+    font-size: 10px;
+    opacity: .66;
+  }
+
+  .live-growth-card-footer {
+    margin-top: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .live-growth-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11px;
+    opacity: .72;
+  }
+
+  .live-growth-history-btn {
+    min-height: 38px;
+    padding: 9px 13px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: #ffffff !important;
+    text-decoration: none !important;
+    font-size: 12px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #0f7f7a, #159f91);
+  }
+
+  @media (max-width: 620px) {
+    .live-growth-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .live-growth-stat-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .live-growth-header {
+      align-items: center;
+    }
+
+    .batch-chart-heading {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+
+
+  /* =========================================================
+     HOME DASHBOARD - CLEAN ORGANIZED LAYOUT
+     ========================================================= */
+
+  .home-dashboard {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .home-dashboard > .panel {
+    width: 100%;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .home-dashboard .sensor-cards-pretty {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .home-dashboard .sensor-card-pretty {
+    min-width: 0;
+    min-height: 156px;
+    height: 100%;
+  }
+
+  .home-dashboard .sensor-title,
+  .home-dashboard .sensor-sub,
+  .home-dashboard .strong-sub,
+  .home-dashboard .big-value {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  .home-dashboard .growth-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .home-dashboard .growth-monitoring-heading,
+  .home-dashboard .weekly-growth-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .home-dashboard .growth-chart-wrap {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .home-dashboard .growth-history-item {
+    min-width: 0;
+  }
+
+  .home-dashboard .growth-history-item > div {
+    min-width: 0;
+  }
+
+  .home-dashboard .growth-history-item time {
+    flex-shrink: 0;
+  }
+
+  .home-dashboard .weekly-growth-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .home-dashboard .weekly-batch-panel {
+    min-width: 0;
+    height: 100%;
+  }
+
+  .home-dashboard .weekly-stat-box-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .home-dashboard .weekly-detail-boxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .home-dashboard .quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .home-dashboard .card-link {
+    min-width: 0;
+  }
+
+  .home-dashboard .quick-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .home-dashboard .sensor-cards-pretty {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .home-dashboard .weekly-growth-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .home-dashboard .quick-actions-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .home-dashboard {
+      gap: 14px;
+    }
+
+    .home-dashboard .sensor-cards-pretty,
+    .home-dashboard .growth-summary-grid,
+    .home-dashboard .weekly-stat-box-grid,
+    .home-dashboard .weekly-detail-boxes {
+      grid-template-columns: 1fr;
+    }
+
+    .home-dashboard .quick-actions-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .home-dashboard .growth-history-item {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .home-dashboard .growth-history-item time {
+      white-space: normal;
+    }
+  }
+
+  @media (max-width: 460px) {
+    .home-dashboard .quick-actions-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+
+
+  /* =========================================================
+     HOME - BALANCED / EQUAL LAYOUT
+     ========================================================= */
+
+  .home-dashboard {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+  }
+
+  .home-dashboard > .panel {
+    width: 100%;
+    margin: 0;
+    min-width: 0;
+  }
+
+  /* Water monitoring: 5 cards in a balanced grid */
+  .home-dashboard .water-monitoring-panel .sensor-cards-pretty {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .home-dashboard .water-monitoring-panel .sensor-card-pretty {
+    min-width: 0;
+    height: 100%;
+    min-height: 168px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .home-dashboard .water-monitoring-panel .sensor-card-pretty .individual-sensor-status {
+    margin-top: auto;
+  }
+
+  /* Individual growth summary: equal cards */
+  .home-dashboard .growth-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .home-dashboard .growth-summary-grid > .sensor-card-pretty {
+    height: 100%;
+    min-width: 0;
+  }
+
+  /* Batch cards: equal width + equal internal stat boxes */
+  .home-dashboard .weekly-growth-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .home-dashboard .weekly-batch-panel {
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .home-dashboard .weekly-stat-box-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .home-dashboard .weekly-stat-box {
+    min-width: 0;
+    height: 100%;
+  }
+
+  .home-dashboard .weekly-detail-boxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .home-dashboard .weekly-batch-footer {
+    margin-top: auto;
+  }
+
+  /* Quick actions: distribute evenly */
+  .home-dashboard .quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .home-dashboard .quick-actions-grid .card-link,
+  .home-dashboard .quick-actions-grid .quick-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Prevent text from clipping anywhere inside dashboard cards */
+  .home-dashboard h1,
+  .home-dashboard h2,
+  .home-dashboard h3,
+  .home-dashboard p,
+  .home-dashboard span,
+  .home-dashboard strong,
+  .home-dashboard time,
+  .home-dashboard .sensor-title,
+  .home-dashboard .sensor-sub,
+  .home-dashboard .big-value {
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  @media (max-width: 1180px) {
+    .home-dashboard .water-monitoring-panel .sensor-cards-pretty {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .home-dashboard .weekly-stat-box-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .home-dashboard .quick-actions-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 900px) {
+    .home-dashboard .water-monitoring-panel .sensor-cards-pretty,
+    .home-dashboard .growth-summary-grid,
+    .home-dashboard .weekly-growth-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .home-dashboard .quick-actions-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 620px) {
+    .home-dashboard .water-monitoring-panel .sensor-cards-pretty,
+    .home-dashboard .growth-summary-grid,
+    .home-dashboard .weekly-growth-grid,
+    .home-dashboard .weekly-stat-box-grid,
+    .home-dashboard .weekly-detail-boxes,
+    .home-dashboard .quick-actions-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+
+
+  /* =========================================================
+     SMALL HOME POLISH
+     ========================================================= */
+
+  /* Keep long board status text like "Disconnected" inside card */
+  .home-dashboard .status-card .big-value {
+    font-size: 1.35rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* Quick Actions:
+     4 equal cards on the first row.
+     If the last row has only 3 cards, they expand evenly to fill it. */
+  .home-dashboard .quick-actions-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .home-dashboard .quick-actions-grid .card-link {
+    flex: 1 1 calc(25% - 14px);
+    min-width: 210px;
+    max-width: none;
+  }
+
+  .home-dashboard .quick-actions-grid .quick-card {
+    width: 100%;
+    height: 125px;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 1000px) {
+    .home-dashboard .quick-actions-grid .card-link {
+      flex-basis: calc(33.333% - 14px);
+      min-width: 190px;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .home-dashboard .quick-actions-grid .card-link {
+      flex-basis: calc(50% - 14px);
+      min-width: 160px;
+    }
+  }
+
+  @media (max-width: 430px) {
+    .home-dashboard .quick-actions-grid .card-link {
+      flex-basis: 100%;
+      min-width: 0;
+    }
+  }
+
+
+
+  /* =========================================================
+     INDIVIDUAL GROWTH - COMPACT ORGANIZED DESIGN
+     ========================================================= */
+
+  .home-dashboard .compact-individual-growth {
+    padding: 18px 20px;
+  }
+
+  .home-dashboard .compact-growth-heading {
+    margin-bottom: 14px;
+  }
+
+  .home-dashboard .compact-growth-heading h2 {
+    margin: 2px 0 3px;
+    font-size: 1.25rem;
+  }
+
+  .home-dashboard .compact-growth-heading p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    opacity: .72;
+  }
+
+  .home-dashboard .compact-section-eyebrow {
+    display: inline-block;
+    margin-bottom: 2px;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.1px;
+    opacity: .55;
+  }
+
+  .home-dashboard .compact-classify-btn {
+    min-height: 38px;
+    padding: 8px 13px;
+    font-size: 12px;
+  }
+
+  .home-dashboard .compact-growth-layout {
+    display: grid;
+    grid-template-columns:
+      minmax(210px, .85fr)
+      minmax(320px, 1.35fr)
+      minmax(220px, .9fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .home-dashboard .compact-growth-summary-card,
+  .home-dashboard .compact-growth-chart,
+  .home-dashboard .compact-growth-history {
+    min-width: 0;
+    border-radius: 14px;
+    border: 1px solid rgba(15,127,122,.12);
+    background: rgba(15,127,122,.045);
+  }
+
+  .home-dashboard .compact-growth-summary-card {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .home-dashboard .compact-growth-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .home-dashboard .compact-label,
+  .home-dashboard .compact-growth-meta span,
+  .home-dashboard .compact-subhead span {
+    font-size: 11px;
+    font-weight: 800;
+    opacity: .65;
+  }
+
+  .home-dashboard .compact-growth-stage strong {
+    font-size: 1.45rem;
+    line-height: 1.1;
+    color: #0f4d4c;
+  }
+
+  .home-dashboard .compact-growth-stage small {
+    font-size: 11px;
+    opacity: .68;
+  }
+
+  .home-dashboard .compact-growth-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 8px;
+  }
+
+  .home-dashboard .compact-growth-meta > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.45);
+  }
+
+  .home-dashboard .compact-growth-meta strong {
+    font-size: 12px;
+  }
+
+  .home-dashboard .compact-growth-chart,
+  .home-dashboard .compact-growth-history {
+    padding: 12px 14px;
+  }
+
+  .home-dashboard .compact-subhead {
+    margin-bottom: 8px;
+  }
+
+  .home-dashboard .compact-growth-chart canvas {
+    width: 100% !important;
+    max-height: 125px;
+  }
+
+  .home-dashboard .compact-growth-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .home-dashboard .compact-growth-history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 9px;
+    border-radius: 9px;
+    background: rgba(255,255,255,.52);
+  }
+
+  .home-dashboard .compact-growth-history-item > div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .home-dashboard .compact-growth-history-item strong {
+    font-size: 12px;
+    overflow-wrap: break-word;
+  }
+
+  .home-dashboard .compact-growth-history-item small,
+  .home-dashboard .compact-growth-history-item time {
+    font-size: 10px;
+    opacity: .65;
+  }
+
+  .home-dashboard .compact-growth-history-item time {
+    flex-shrink: 0;
+  }
+
+  .home-dashboard .compact-growth-empty {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 12px;
+    background: rgba(15,127,122,.05);
+  }
+
+  .home-dashboard .compact-growth-empty i {
+    font-size: 20px;
+    color: #0f7f7a;
+  }
+
+  .home-dashboard .compact-growth-empty div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .home-dashboard .compact-growth-empty span {
+    font-size: 12px;
+    opacity: .72;
+  }
+
+  @media (max-width: 980px) {
+    .home-dashboard .compact-growth-layout {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .home-dashboard .compact-growth-summary-card {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: 680px) {
+    .home-dashboard .compact-growth-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .home-dashboard .compact-growth-summary-card {
+      grid-column: auto;
+    }
   }
 
 </style>

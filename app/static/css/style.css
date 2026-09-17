@@ -5,10 +5,10 @@ body {
     min-height: 100vh; /* full viewport height */
     margin: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-min-width: 1200px;      /* DESKTOP ONLY */
+    min-width: 0;
     font-size: 16px;
-width: 100%;
-    overflow-x: auto; 
+    width: 100%;
+    overflow-x: hidden; 
     /* OFF-WHITE + TEAL + WINE (LIGHT, READABLE) */
     background:
         radial-gradient(900px 520px at 12% 10%, rgba(15,127,122,0.18), transparent 30%),
@@ -88,16 +88,11 @@ header nav ul li a:hover::after{ width: 100%; }
 /* === Main Content === */
 main.container {
     flex: 1;
-    max-width: 1400px;
-    margin: 28px auto;
-    padding: 28px;
-    display: grid;
-
-    /* DESKTOP FIXED GRID */
-    grid-template-columns: repeat(4, minmax(1200px, 1fr));
-    gap: 26px;
-    align-items: start;
-
+    width: min(1320px, calc(100% - 32px));
+    max-width: 1320px;
+    margin: 24px auto;
+    padding: 0;
+    display: block;
 }
 
 /* === Panels === */
@@ -1928,4 +1923,89 @@ table tr:hover {
 
 .page-nav i {
     font-size: 0.9rem;
+}
+
+/* =========================================================
+   CRAYLIFE LAYOUT NORMALIZATION
+   Keeps pages centered, prevents text/card clipping, and
+   overrides older conflicting dashboard width declarations.
+   ========================================================= */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    max-width: 100%;
+}
+
+img,
+canvas,
+svg,
+video {
+    max-width: 100%;
+}
+
+main.container {
+    width: min(1320px, calc(100% - 32px));
+    max-width: 1320px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.dashboard-container {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+}
+
+.panel,
+.sensor-card,
+.card-action,
+.weekly-batch-panel,
+.growth-history-item,
+.history-item {
+    min-width: 0;
+}
+
+.panel h1,
+.panel h2,
+.panel h3,
+.panel p,
+.sensor-title,
+.sensor-value,
+.sensor-sub,
+.strong-sub,
+.weekly-batch-panel,
+.growth-history-item,
+.record-title {
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+.form-control,
+input,
+select,
+textarea,
+button {
+    max-width: 100%;
+}
+
+@media (max-width: 900px) {
+    main.container {
+        width: min(100% - 20px, 1320px);
+    }
+}
+
+@media (max-width: 600px) {
+    main.container {
+        width: min(100% - 14px, 1320px);
+    }
 }

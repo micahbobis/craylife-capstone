@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}
+Edit Observation - {{ batch.batch_name }}
+{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-container">
+
+    <div class="panel glow observation-edit-panel">
+
+        <div class="edit-header">
+            <div>
+                <h2>
+                    <i class="fa-solid fa-pen"></i>
+                    Edit Observation
+                </h2>
+
+                <p>
+                    Batch:
+                    <strong>{{ batch.batch_name }}</strong>
+                </p>
+            </div>
+
+            <a
+                href="{{ url_for('batch_detail', batch_id=batch.id) }}"
+                class="back-btn"
+            >
+                <i class="fa-solid fa-arrow-left"></i>
+                Back to Batch
+            </a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="edit-messages">
+                    {% for category, message in messages %}
+                        <div class="text-{{ 'danger' if category == 'danger' else category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" class="observation-edit-form">
+
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+            >
+
+            <div class="form-group">
+                <label>Growth Stage</label>
+
+                <select
+                    name="growth"
+                    class="form-control"
+                    required
+                >
+                    {% set current_growth = observation.growth or '' %}
+
+                    <option
+                        value="mid_juvenile"
+                        {% if current_growth == 'mid_juvenile' %}selected{% endif %}
+                    >
+                        Mid Juvenile
+                    </option>
+
+                    <option
+                        value="juvenile"
+                        {% if current_growth == 'juvenile' %}selected{% endif %}
+                    >
+                        Juvenile
+                    </option>
+
+                    <option
+                        value="mid_adult"
+                        {% if current_growth == 'mid_adult' %}selected{% endif %}
+                    >
+                        Mid Adult
+                    </option>
+
+                    <option
+                        value="sub_adult"
+                        {% if current_growth == 'sub_adult' %}selected{% endif %}
+                    >
+                        Sub Adult
+                    </option>
+
+                    <option
+                        value="adult"
+                        {% if current_growth == 'adult' %}selected{% endif %}
+                    >
+                        Adult
+                    </option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Estimated Length (cm)</label>
+
+                <input
+                    type="number"
+                    name="estimated_length_cm"
+                    class="form-control"
+                    min="0"
+                    step="0.1"
+                    value="{% if observation.estimated_length_cm is not none %}{{ observation.estimated_length_cm }}{% endif %}"
+                >
+            </div>
+
+            <div class="read-only-grid">
+
+                <div>
+                    <span>Gender</span>
+                    <strong>
+                        {{ observation.gender or 'Unknown' }}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Growth Confidence</span>
+                    <strong>
+                        {% if observation.growth_confidence is not none %}
+                            {{ "%.2f"|format(observation.growth_confidence) }}%
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Recorded</span>
+                    <strong>
+                        {% if observation.created_at %}
+                            {{ observation.created_at.strftime("%b %d, %Y %I:%M %p") }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+            </div>
+
+            <p class="edit-note">
+                Editing this observation will automatically affect the
+                batch's growth calculations when you return to Batch Detail.
+                Model confidence and the original recorded date are preserved.
+            </p>
+
+            <button
+                type="submit"
+                class="save-observation-btn"
+            >
+                <i class="fa-solid fa-floppy-disk"></i>
+                Save Changes
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+<style>
+
+.dashboard-container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.observation-edit-panel {
+    padding: 22px;
+}
+
+.edit-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.edit-header h2 {
+    margin: 0 0 5px;
+}
+
+.edit-header p {
+    margin: 0;
+    opacity: .76;
+}
+
+.back-btn,
+.save-observation-btn {
+    min-height: 42px;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 11px;
+    font-family: inherit;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none !important;
+    cursor: pointer;
+}
+
+.back-btn {
+    color: #ffffff !important;
+    background: #64748b;
+}
+
+.save-observation-btn {
+    color: #ffffff;
+    background: #0f7f7a;
+    margin-top: 18px;
+}
+
+.observation-edit-form {
+    margin-top: 22px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 7px;
+    font-weight: 800;
+}
+
+.read-only-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.read-only-grid > div {
+    padding: 13px;
+    border-radius: 12px;
+    background: rgba(15, 127, 122, .07);
+    border: 1px solid rgba(15, 127, 122, .12);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.read-only-grid span {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: .7;
+}
+
+.edit-note {
+    margin-top: 18px;
+    font-size: 13px;
+    opacity: .75;
+}
+
+.edit-messages {
+    margin-top: 16px;
+}
+
+</style>
+
+{% endblock %}

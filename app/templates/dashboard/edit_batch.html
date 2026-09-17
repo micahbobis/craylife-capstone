@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}
+Edit Batch - {{ batch.batch_name }}
+{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-container">
+
+    <div class="panel glow">
+
+        <h2>
+            <i class="fa-solid fa-pen"></i>
+            Edit Batch
+        </h2>
+
+        <p>
+            Update the batch name and quantity.
+        </p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+
+                    <div
+                        class="text-{{ 'danger' if category == 'danger' else category }}"
+                        style="margin-bottom: 12px;"
+                    >
+                        {{ message }}
+                    </div>
+
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+
+        <form method="POST">
+
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+            >
+
+
+            <div class="form-group">
+
+                <label>
+                    Batch Name
+                </label>
+
+                <input
+                    type="text"
+                    name="batch_name"
+                    class="form-control"
+                    value="{{ batch.batch_name }}"
+                    required
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    Quantity
+                </label>
+
+                <input
+                    type="number"
+                    name="quantity"
+                    class="form-control"
+                    min="0"
+                    value="{{ batch.quantity or 0 }}"
+                    required
+                >
+
+            </div>
+
+
+            <div class="edit-actions">
+
+                <a
+                    href="{{ url_for('batch_detail', batch_id=batch.id) }}"
+                    class="btn btn-secondary"
+                >
+                    Cancel
+                </a>
+
+
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                >
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    Save Changes
+                </button>
+
+            </div>
+
+        </form>
+
+    </div>
+
+</div>
+
+
+<style>
+
+.dashboard-container {
+    max-width: 850px;
+    margin: 0 auto;
+}
+
+.form-group {
+    margin-bottom: 18px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 7px;
+    font-weight: 700;
+}
+
+.edit-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+</style>
+
+{% endblock %}

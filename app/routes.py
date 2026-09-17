@@ -1,13 +1,15 @@
 from flask import render_template, redirect, url_for, flash, request, session
-from app import app, db, csrf, mail, serializer
+from app import app, db, csrf, mail, serializer, socketio
 from app.forms import LoginForm, RegistrationForm, BatchForm, RequestResetForm, ResetPasswordForm
-from app.models import User, Batch, Inventory, Sale, ActivityLog, ClassificationLog, BatchGrowthRecord
+from app.models import User, Batch, Inventory, Sale, ActivityLog, ClassificationLog, BatchGrowthRecord, MonitoringAlert
 from functools import wraps
 from flask_mail import Message
+import secrets
+import threading
 import os
 import uuid
 import io
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import tensorflow as tf
 import traceback
 import json
@@ -19,7 +21,115 @@ from werkzeug.utils import secure_filename
 from app.utils import get_arduino_data
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask import jsonify
+from flask_socketio import join_room
 from app.db_save import save_classification_log
+from pillow_heif import register_heif_opener
+
+register_heif_opener()
+from app.batch_average_growth_service import (
+    SAMPLE_TARGET,
+    build_period_summaries,
+    next_sample_position,
+)
+
+
+# =========================================================
+# PHILIPPINE TIME DISPLAY
+# =========================================================
+try:
+    from zoneinfo import ZoneInfo
+    PH_TZ = ZoneInfo("Asia/Manila")
+except Exception:
+    # Safe fallback for Windows/Python installs without tzdata.
+    # The Philippines uses UTC+8 year-round.
+    PH_TZ = timezone(timedelta(hours=8), name="PHT")
+
+UTC_TZ = timezone.utc
+
+
+def to_ph_time(value):
+    """Convert a stored UTC datetime to Philippine local time for display."""
+    if value is None:
+        return None
+
+    # Existing SQLAlchemy DateTime rows are naive UTC datetimes.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC_TZ)
+
+    return value.astimezone(PH_TZ)
+
+
+@app.template_filter("ph_time")
+def ph_time_filter(value, fmt="%b %d, %Y %I:%M %p"):
+    local_time = to_ph_time(value)
+    return local_time.strftime(fmt) if local_time else "—"
+
+# =========================================================
+# 14-DAY GROWTH TRACKING
+# =========================================================
+GROWTH_CHECK_INTERVAL_DAYS = 14
+
+
+def _days_between(start_dt, end_dt):
+    if not start_dt or not end_dt:
+        return None
+
+    return max(
+        0,
+        (end_dt.date() - start_dt.date()).days
+    )
+
+
+def _get_official_growth_references(observations):
+    """
+    Build the official growth-check timeline for one batch.
+
+    Rules:
+    - First observation = baseline / first official reference.
+    - Uploads made before 14 days are saved in history only.
+    - The first observation at least 14 days after the last
+      official reference becomes the next official reference.
+    """
+    if not observations:
+        return []
+
+    sorted_observations = sorted(
+        observations,
+        key=lambda obs: obs.created_at or datetime.min
+    )
+
+    official_references = []
+
+    for observation in sorted_observations:
+
+        if not observation.created_at:
+            continue
+
+        if not official_references:
+            official_references.append(observation)
+            continue
+
+        last_reference = official_references[-1]
+
+        elapsed_days = _days_between(
+            last_reference.created_at,
+            observation.created_at
+        )
+
+        if (
+            elapsed_days is not None
+            and elapsed_days >= GROWTH_CHECK_INTERVAL_DAYS
+        ):
+            official_references.append(observation)
+
+    return official_references
+
+
+@socketio.on("connect")
+def join_user_growth_room():
+    user_id = session.get("user_id")
+    if user_id:
+        join_room(f"user_{user_id}")
 
 def send_email_verification(user, new_email):
     token = serializer.dumps(new_email, salt='email-change')
@@ -167,10 +277,933 @@ def normalize_sensor_temperature(data):
     return payload
 
 
+# =========================================================
+# SENSOR HEARTBEAT / CONNECTION STATUS
+#
+# The ESP32 sends data, then spends 5 seconds on LCD screen 1
+# and 5 seconds on LCD screen 2. That means the next POST can
+# arrive roughly every 10 seconds.
+#
+# Do NOT mark the hardware disconnected just because the
+# sensor values did not change. Connected/Disconnected is based
+# only on how recently the ESP32 wrote a fresh payload.
+# =========================================================
+SENSOR_HEARTBEAT_TIMEOUT_SECONDS = 20
+
+
+def get_sensor_json_path():
+    return os.path.abspath(
+        os.path.join(
+            app.root_path,
+            "..",
+            "arduino_data.json"
+        )
+    )
+
+
+def get_live_sensor_data():
+    """
+    Read the most recently saved ESP32 payload.
+
+    Connected:
+        JSON file exists and was refreshed within the heartbeat
+        timeout, regardless of whether the values changed.
+
+    Disconnected:
+        File is missing or no new ESP32 POST has refreshed it
+        within SENSOR_HEARTBEAT_TIMEOUT_SECONDS.
+    """
+    json_path = get_sensor_json_path()
+
+    disconnected_payload = {
+        "Status": "Disconnected",
+        "pH Level": "—",
+        "pH Status": "Disconnected",
+        "Water Level": "—",
+        "Water Status": "Disconnected",
+        "Water Quality": "—",
+        "Turbidity NTU": "—",
+        "pH Sensor Status": "Disconnected",
+        "Water Level Sensor Status": "Disconnected",
+        "Turbidity Sensor Status": "Disconnected",
+        "Temperature": "—",
+        "Temperature Status": "UNKNOWN",
+        "Temperature Sensor Status": "Disconnected",
+        "Alert Level": "CRITICAL",
+        "Alert Message": "No recent sensor update was received.",
+        "Recommendation": (
+            "Check the board, sensor wires, power supply, "
+            "and network connection."
+        )
+    }
+
+    if not os.path.exists(json_path):
+        return disconnected_payload
+
+    try:
+        file_age_seconds = max(
+            0.0,
+            datetime.now().timestamp()
+            - os.path.getmtime(json_path)
+        )
+
+        if file_age_seconds > SENSOR_HEARTBEAT_TIMEOUT_SECONDS:
+            return disconnected_payload
+
+        with open(json_path, "r", encoding="utf-8") as sensor_file:
+            payload = json.load(sensor_file)
+
+        payload = normalize_sensor_temperature(payload)
+
+        # A fresh file means the ESP32 is alive, even if every
+        # measurement is identical to the previous reading.
+        payload["Status"] = "Connected"
+
+        return payload
+
+    except Exception as error:
+        print(
+            "[get_live_sensor_data] ERROR:",
+            error,
+            flush=True
+        )
+        return disconnected_payload
+
+import time
+
+
+
+SENSOR_TIMEOUT_SECONDS = 12
+
+
+def _log_monitoring_alert_once(sensor_type, value, message, cooldown_minutes=5):
+    """
+    Save a monitoring incident without creating a duplicate row every
+    few seconds while the same condition remains active.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=cooldown_minutes)
+
+    recent_same_alert = (
+        MonitoringAlert.query
+        .filter(
+            MonitoringAlert.sensor_type == sensor_type,
+            MonitoringAlert.message == message,
+            MonitoringAlert.created_at >= cutoff
+        )
+        .order_by(MonitoringAlert.created_at.desc())
+        .first()
+    )
+
+    if recent_same_alert:
+        return
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        numeric_value = None
+
+    db.session.add(
+        MonitoringAlert(
+            sensor_type=sensor_type,
+            value=numeric_value,
+            message=message,
+            created_at=datetime.utcnow()
+        )
+    )
+
+    try:
+        db.session.commit()
+
+        _send_sensor_issue_report(
+            sensor_type=sensor_type,
+            value=value,
+            message=message
+        )
+
+    except Exception:
+        db.session.rollback()
+
+
+# =========================================================
+# ADMIN REPORT NOTIFICATION HELPERS
+# Persistent, user-specific settings + once-daily summary
+# =========================================================
+
+ADMIN_REPORT_SETTINGS_FILE = os.path.abspath(
+    os.path.join(
+        app.root_path,
+        "..",
+        "admin_report_settings.json"
+    )
+)
+
+DAILY_SUMMARY_HOUR_PH = 8
+DAILY_SUMMARY_MINUTE_PH = 0
+
+_daily_summary_thread_started = False
+_daily_summary_thread_lock = threading.Lock()
+
+
+def _load_all_admin_report_preferences():
+    if not os.path.exists(ADMIN_REPORT_SETTINGS_FILE):
+        return {}
+
+    try:
+        with open(
+            ADMIN_REPORT_SETTINGS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as settings_file:
+            data = json.load(settings_file)
+
+        return data if isinstance(data, dict) else {}
+
+    except Exception as error:
+        print(
+            "[ADMIN REPORT SETTINGS LOAD ERROR]",
+            error,
+            flush=True
+        )
+        return {}
+
+
+def _save_all_admin_report_preferences(data):
+    try:
+        temp_path = ADMIN_REPORT_SETTINGS_FILE + ".tmp"
+
+        with open(
+            temp_path,
+            "w",
+            encoding="utf-8"
+        ) as settings_file:
+            json.dump(
+                data,
+                settings_file,
+                indent=4
+            )
+
+        os.replace(
+            temp_path,
+            ADMIN_REPORT_SETTINGS_FILE
+        )
+
+        return True
+
+    except Exception as error:
+        print(
+            "[ADMIN REPORT SETTINGS SAVE ERROR]",
+            error,
+            flush=True
+        )
+        return False
+
+
+def _get_admin_report_preferences(user_id=None, user_email=None):
+    """
+    Return persistent report-notification preferences for one user.
+    """
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    data = _load_all_admin_report_preferences()
+
+    key = str(user_id) if user_id is not None else None
+
+    saved = (
+        data.get(key, {})
+        if key is not None
+        else {}
+    )
+
+    default_email = (
+        user_email
+        or session.get("user_email")
+        or app.config.get("MAIL_USERNAME")
+        or ""
+    )
+
+    return {
+        "admin_email": saved.get(
+            "admin_email",
+            default_email
+        ),
+        "sensor_alerts": saved.get(
+            "sensor_alerts",
+            "yes"
+        ),
+        "growth_alerts": saved.get(
+            "growth_alerts",
+            "yes"
+        ),
+        "daily_summary": saved.get(
+            "daily_summary",
+            "no"
+        ),
+        "last_daily_summary_date": saved.get(
+            "last_daily_summary_date"
+        )
+    }
+
+
+def _save_admin_report_preferences(
+    user_id,
+    admin_email,
+    sensor_alerts,
+    growth_alerts,
+    daily_summary
+):
+    data = _load_all_admin_report_preferences()
+    key = str(user_id)
+
+    existing = data.get(key, {})
+
+    data[key] = {
+        "admin_email": admin_email,
+        "sensor_alerts": sensor_alerts,
+        "growth_alerts": growth_alerts,
+        "daily_summary": daily_summary,
+        "last_daily_summary_date": existing.get(
+            "last_daily_summary_date"
+        )
+    }
+
+    return _save_all_admin_report_preferences(data)
+
+
+def _mark_daily_summary_sent(user_id, date_key):
+    data = _load_all_admin_report_preferences()
+    key = str(user_id)
+
+    if key not in data:
+        return False
+
+    data[key]["last_daily_summary_date"] = date_key
+
+    return _save_all_admin_report_preferences(data)
+
+
+def _send_admin_report_email(subject, body, recipient):
+    """
+    Send one Craylife admin email using the configured Flask-Mail sender.
+    """
+    if not recipient:
+        print(
+            "[ADMIN REPORT EMAIL] No recipient configured",
+            flush=True
+        )
+        return False
+
+    try:
+        msg = Message(
+            subject=subject,
+            sender=app.config.get("MAIL_USERNAME"),
+            recipients=[recipient],
+            body=body
+        )
+
+        mail.send(msg)
+
+        print(
+            f"[ADMIN REPORT EMAIL] Sent to {recipient}: {subject}",
+            flush=True
+        )
+
+        return True
+
+    except Exception as error:
+        print(
+            "[ADMIN REPORT EMAIL ERROR]",
+            error,
+            flush=True
+        )
+        return False
+
+
+def _get_enabled_sensor_recipients():
+    """
+    Return unique admin emails that have sensor alerts enabled.
+    """
+    data = _load_all_admin_report_preferences()
+    recipients = []
+
+    for saved in data.values():
+        if not isinstance(saved, dict):
+            continue
+
+        if saved.get("sensor_alerts", "yes") != "yes":
+            continue
+
+        email = (saved.get("admin_email") or "").strip()
+
+        if email and email not in recipients:
+            recipients.append(email)
+
+    # If no preferences have been saved yet, use configured mail account.
+    if not recipients:
+        fallback = app.config.get("MAIL_USERNAME")
+
+        if fallback:
+            recipients.append(fallback)
+
+    return recipients
+
+
+def _send_sensor_issue_report(sensor_type, value, message):
+    """
+    Email admins using the exact sensor issue recorded by the system.
+    """
+    live_sensor = get_live_sensor_data()
+
+    value_text = "—"
+
+    if value is not None:
+        try:
+            value_text = f"{float(value):.2f}"
+        except (TypeError, ValueError):
+            value_text = str(value)
+
+    now_ph = to_ph_time(datetime.utcnow())
+
+    subject = f"Craylife Sensor Alert - {sensor_type}"
+
+    body = f"""CRAYLIFE SYSTEM REPORT
+
+Date: {now_ph.strftime('%B %d, %Y')}
+Time: {now_ph.strftime('%I:%M %p')}
+
+STATUS
+Attention Required
+
+ISSUE DETECTED
+Sensor: {sensor_type}
+Current Reading: {value_text}
+Issue: {message}
+
+CURRENT SENSOR CONDITIONS
+Board Connection: {live_sensor.get('Status', 'Unknown')}
+pH Level: {live_sensor.get('pH Level', '—')}
+Water Level: {live_sensor.get('Water Level', '—')}
+Water Quality: {live_sensor.get('Water Quality', '—')}
+Temperature: {live_sensor.get('Temperature', '—')}
+Temperature Status: {live_sensor.get('Temperature Status', 'UNKNOWN')}
+
+RECOMMENDED ACTION
+Review the affected sensor or water condition and confirm whether
+the issue continues.
+
+This is an automated report generated by the Craylife Monitoring System.
+"""
+
+    sent_any = False
+
+    for recipient in _get_enabled_sensor_recipients():
+        if _send_admin_report_email(
+            subject,
+            body,
+            recipient
+        ):
+            sent_any = True
+
+    return sent_any
+
+
+def _send_growth_due_report(
+    batch,
+    latest_observation,
+    status,
+    next_check_date
+):
+    """
+    Send a batch growth alert using actual saved observations.
+    """
+    preferences = _get_admin_report_preferences(
+        user_id=batch.user_id
+    )
+
+    if preferences.get("growth_alerts") != "yes":
+        return False
+
+    recipient = preferences.get("admin_email")
+
+    if not recipient:
+        return False
+
+    latest_stage = (
+        latest_observation.growth.replace("_", " ").title()
+        if latest_observation and latest_observation.growth
+        else "Unknown"
+    )
+
+    latest_length = (
+        f"{latest_observation.estimated_length_cm:.1f} cm"
+        if latest_observation
+        and latest_observation.estimated_length_cm is not None
+        else "Unknown"
+    )
+
+    now_ph = to_ph_time(datetime.utcnow())
+
+    subject = f"Craylife Growth Report - {batch.batch_name}"
+
+    body = f"""CRAYLIFE GROWTH REPORT
+
+Date: {now_ph.strftime('%B %d, %Y')}
+Time: {now_ph.strftime('%I:%M %p')}
+
+Batch: {batch.batch_name}
+Latest Stage: {latest_stage}
+Latest Estimated Length: {latest_length}
+Growth Status: {status}
+
+Next Check:
+{to_ph_time(next_check_date).strftime('%B %d, %Y') if next_check_date else 'Not available'}
+
+NEXT ACTION
+Upload a new batch observation when the scheduled growth verification
+is due so the system can complete the official comparison.
+
+This is an automated report generated by the Craylife Monitoring System.
+"""
+
+    return _send_admin_report_email(
+        subject,
+        body,
+        recipient
+    )
+
+
+def _build_daily_summary_for_user(user):
+    """
+    Build one daily report from the same actual data used by
+    Home, Reports, MonitoringAlert, ActivityLog and ClassificationLog.
+    """
+    now_utc = datetime.utcnow()
+    now_ph = to_ph_time(now_utc)
+    since_utc = now_utc - timedelta(hours=24)
+
+    live_sensor = get_live_sensor_data()
+
+    recent_alerts = (
+        MonitoringAlert.query
+        .filter(
+            MonitoringAlert.created_at >= since_utc
+        )
+        .order_by(
+            MonitoringAlert.created_at.desc()
+        )
+        .limit(10)
+        .all()
+    )
+
+    recent_activities = (
+        ActivityLog.query
+        .filter(
+            ActivityLog.user_id == user.id,
+            ActivityLog.timestamp >= since_utc
+        )
+        .order_by(
+            ActivityLog.timestamp.desc()
+        )
+        .limit(10)
+        .all()
+    )
+
+    batches = (
+        Batch.query
+        .filter_by(user_id=user.id)
+        .order_by(Batch.created_date.asc())
+        .all()
+    )
+
+    batch_lines = []
+    due_count = 0
+
+    for batch in batches:
+        observations = (
+            ClassificationLog.query
+            .filter_by(
+                user_id=user.id,
+                batch_id=batch.id
+            )
+            .order_by(
+                ClassificationLog.created_at.asc()
+            )
+            .all()
+        )
+
+        if not observations:
+            batch_lines.append(
+                f"- {batch.batch_name}: No growth observation yet"
+            )
+            continue
+
+        official_refs = _get_official_growth_references(
+            observations
+        )
+
+        last_verified = (
+            official_refs[-1]
+            if official_refs
+            else observations[0]
+        )
+
+        latest = observations[-1]
+
+        days_since_verified = (
+            _days_between(
+                last_verified.created_at,
+                now_utc
+            )
+            or 0
+        )
+
+        if days_since_verified >= GROWTH_CHECK_INTERVAL_DAYS:
+            status = "VERIFICATION DUE"
+            due_count += 1
+        elif latest.id != last_verified.id:
+            status = "PROVISIONAL"
+        elif len(official_refs) >= 2:
+            previous = official_refs[-2]
+
+            if (
+                last_verified.estimated_length_cm is not None
+                and previous.estimated_length_cm is not None
+            ):
+                change = (
+                    last_verified.estimated_length_cm
+                    - previous.estimated_length_cm
+                )
+
+                if change > 0:
+                    status = "GROWTH DETECTED"
+                elif change < 0:
+                    status = "SIZE DECREASE"
+                else:
+                    status = "STABLE"
+            else:
+                status = "VERIFIED"
+        else:
+            status = "BASELINE"
+
+        latest_stage = (
+            latest.growth.replace("_", " ").title()
+            if latest.growth
+            else "Unknown"
+        )
+
+        latest_length = (
+            f"{latest.estimated_length_cm:.1f} cm"
+            if latest.estimated_length_cm is not None
+            else "Unknown"
+        )
+
+        batch_lines.append(
+            f"- {batch.batch_name}: "
+            f"{latest_stage}, {latest_length}, {status}"
+        )
+
+    alert_lines = []
+
+    for alert in recent_alerts:
+        alert_time = to_ph_time(
+            alert.created_at
+        ).strftime("%I:%M %p")
+
+        alert_lines.append(
+            f"- {alert_time} | "
+            f"{alert.sensor_type}: {alert.message}"
+        )
+
+    activity_lines = []
+
+    for activity in recent_activities:
+        activity_time = to_ph_time(
+            activity.timestamp
+        ).strftime("%I:%M %p")
+
+        activity_lines.append(
+            f"- {activity_time} | {activity.action}"
+        )
+
+    if not batch_lines:
+        batch_lines = ["- No tracked batches."]
+
+    if not alert_lines:
+        alert_lines = ["- No monitoring alerts in the last 24 hours."]
+
+    if not activity_lines:
+        activity_lines = ["- No recent system activity."]
+
+    body = f"""CRAYLIFE DAILY ADMIN REPORT
+
+Date: {now_ph.strftime('%B %d, %Y')}
+Generated: {now_ph.strftime('%I:%M %p')}
+
+CURRENT SENSOR HEALTH
+Board Connection: {live_sensor.get('Status', 'Unknown')}
+pH Level: {live_sensor.get('pH Level', '—')}
+Water Level: {live_sensor.get('Water Level', '—')}
+Water Quality: {live_sensor.get('Water Quality', '—')}
+Temperature: {live_sensor.get('Temperature', '—')}
+Temperature Status: {live_sensor.get('Temperature Status', 'UNKNOWN')}
+
+MONITORING ALERTS - LAST 24 HOURS
+{chr(10).join(alert_lines)}
+
+BATCH GROWTH STATUS
+Tracked Batches: {len(batches)}
+Verification Due: {due_count}
+{chr(10).join(batch_lines)}
+
+RECENT SYSTEM ACTIVITY - LAST 24 HOURS
+{chr(10).join(activity_lines)}
+
+This is the once-daily automated admin summary generated by
+the Craylife Monitoring System.
+"""
+
+    return body
+
+
+def _daily_summary_worker():
+    """
+    Check once per minute, but send at most ONE daily summary
+    per enabled user per Philippine calendar day.
+
+    If the application starts after 8:00 AM, today's unsent
+    summary is sent on the first check.
+    """
+    while True:
+        try:
+            with app.app_context():
+                now_ph = datetime.now(PH_TZ)
+                today_key = now_ph.strftime("%Y-%m-%d")
+
+                scheduled_time_reached = (
+                    now_ph.hour > DAILY_SUMMARY_HOUR_PH
+                    or (
+                        now_ph.hour == DAILY_SUMMARY_HOUR_PH
+                        and now_ph.minute >= DAILY_SUMMARY_MINUTE_PH
+                    )
+                )
+
+                if scheduled_time_reached:
+                    all_preferences = (
+                        _load_all_admin_report_preferences()
+                    )
+
+                    for user_key, saved in all_preferences.items():
+                        if not isinstance(saved, dict):
+                            continue
+
+                        if saved.get(
+                            "daily_summary",
+                            "no"
+                        ) != "yes":
+                            continue
+
+                        if saved.get(
+                            "last_daily_summary_date"
+                        ) == today_key:
+                            continue
+
+                        try:
+                            user_id = int(user_key)
+                        except (TypeError, ValueError):
+                            continue
+
+                        user = User.query.get(user_id)
+
+                        if not user:
+                            continue
+
+                        recipient = (
+                            saved.get("admin_email")
+                            or user.email
+                        )
+
+                        body = _build_daily_summary_for_user(
+                            user
+                        )
+
+                        subject = (
+                            "Craylife Daily Admin Report - "
+                            + now_ph.strftime("%B %d, %Y")
+                        )
+
+                        if _send_admin_report_email(
+                            subject,
+                            body,
+                            recipient
+                        ):
+                            _mark_daily_summary_sent(
+                                user.id,
+                                today_key
+                            )
+
+        except Exception as error:
+            print(
+                "[DAILY SUMMARY WORKER ERROR]",
+                error,
+                flush=True
+            )
+
+        time.sleep(60)
+
+
+def _ensure_daily_summary_thread():
+    global _daily_summary_thread_started
+
+    if _daily_summary_thread_started:
+        return
+
+    with _daily_summary_thread_lock:
+        if _daily_summary_thread_started:
+            return
+
+        thread = threading.Thread(
+            target=_daily_summary_worker,
+            daemon=True,
+            name="craylife-daily-summary"
+        )
+
+        thread.start()
+
+        _daily_summary_thread_started = True
+
+        print(
+            "[DAILY SUMMARY] Scheduler started "
+            "(08:00 AM Philippine time, once per day)",
+            flush=True
+        )
+
 @app.route("/arduino-data")
 def arduino_data():
-    data = get_arduino_data() or {}
-    data = normalize_sensor_temperature(data)
+
+    json_path = os.path.abspath(
+        os.path.join(
+            app.root_path,
+            "..",
+            "arduino_data.json"
+        )
+    )
+
+    disconnected = {
+        "Status": "Disconnected",
+
+        "pH Level": "—",
+        "pH Status": "Disconnected",
+
+        "Water Level": "—",
+        "Water Status": "Disconnected",
+
+        "Water Quality": "—",
+        "Turbidity NTU": "—",
+
+        "Temperature": "—",
+        "Temperature Status": "UNKNOWN",
+
+        "pH Sensor Status": "Disconnected",
+        "Water Level Sensor Status": "Disconnected",
+        "Turbidity Sensor Status": "Disconnected",
+        "Temperature Sensor Status": "Disconnected",
+
+        "Alert Level": "CRITICAL",
+
+        "Alert Message":
+            "Sensor hardware is disconnected.",
+
+        "Recommendation":
+            "Check the ESP32 power, USB connection, "
+            "sensor wiring, and Wi-Fi connection."
+    }
+
+    # ==========================================
+    # NO SENSOR FILE YET
+    # ==========================================
+    if not os.path.exists(json_path):
+
+        _log_monitoring_alert_once(
+            "Board",
+            None,
+            "Sensor hardware is disconnected."
+        )
+
+        return jsonify(
+            disconnected
+        )
+
+
+    # ==========================================
+    # CHECK LAST ESP32 HEARTBEAT
+    # ==========================================
+    try:
+
+        age_seconds = (
+            time.time()
+            - os.path.getmtime(json_path)
+        )
+
+    except OSError:
+
+        _log_monitoring_alert_once(
+            "Board",
+            None,
+            "Sensor hardware is disconnected."
+        )
+
+        return jsonify(
+            disconnected
+        )
+
+
+    # ESP32 sends every ~5 seconds.
+    # Allow two missed updates + small network delay.
+    if age_seconds > SENSOR_TIMEOUT_SECONDS:
+
+        _log_monitoring_alert_once(
+            "Board",
+            None,
+            "Sensor hardware is disconnected."
+        )
+
+        return jsonify(
+            disconnected
+        )
+
+
+    # ==========================================
+    # HARDWARE IS ACTIVE
+    # ==========================================
+    try:
+
+        with open(
+            json_path,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            data = json.load(file)
+
+    except Exception:
+
+        _log_monitoring_alert_once(
+            "Board",
+            None,
+            "Sensor hardware is disconnected."
+        )
+
+        return jsonify(
+            disconnected
+        )
+
+
+    data = normalize_sensor_temperature(
+        data
+    )
+
+    data["Status"] = "Connected"
+
     return jsonify(data)
 
 
@@ -186,6 +1219,8 @@ def login_required(f):
 
 @app.before_request
 def log_request():
+    _ensure_daily_summary_thread()
+
     print(
         f"[REQUEST] {request.method} {request.path}",
         flush=True
@@ -231,9 +1266,62 @@ def sensor_update_api():
             "Status": "Connected"
         }
 
-        json_path = os.path.abspath(
-            os.path.join(app.root_path, "..", "arduino_data.json")
-        )
+        # ------------------------------------------------------
+        # REPORTABLE SENSOR CONDITIONS
+        # Keep these records for the Reports page.
+        # ------------------------------------------------------
+        try:
+            ph_numeric = float(ph) if ph is not None else None
+        except (TypeError, ValueError):
+            ph_numeric = None
+
+        if ph_numeric is not None and not (6.5 <= ph_numeric <= 8.5):
+            _log_monitoring_alert_once(
+                "pH",
+                ph_numeric,
+                f"pH out of recommended range: {ph_numeric:.2f}"
+            )
+
+        try:
+            temp_numeric = (
+                float(temperature)
+                if temperature is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            temp_numeric = None
+
+        if temp_numeric is not None and temperature_status in {"COLD", "HOT"}:
+            _log_monitoring_alert_once(
+                "Temperature",
+                temp_numeric,
+                f"Underwater temperature status is {temperature_status}."
+            )
+
+        if str(water_level or "").strip().upper() in {
+            "LOW",
+            "CRITICAL",
+            "EMPTY"
+        }:
+            _log_monitoring_alert_once(
+                "Water Level",
+                None,
+                f"Water level status is {str(water_level).upper()}."
+            )
+
+        if str(water_quality or "").strip().upper() in {
+            "POOR",
+            "DIRTY",
+            "HIGH",
+            "CRITICAL"
+        }:
+            _log_monitoring_alert_once(
+                "Turbidity",
+                turbidity_ntu,
+                f"Water quality status is {str(water_quality).upper()}."
+            )
+
+        json_path = get_sensor_json_path()
 
         temp_file = json_path + ".tmp"
         with open(temp_file, "w") as f:
@@ -267,10 +1355,7 @@ def home():
         else []
     )
 
-    sensor_data_raw = get_arduino_data() or {}
-    sensor_data_raw = normalize_sensor_temperature(
-        sensor_data_raw
-    )
+    sensor_data_raw = get_live_sensor_data()
 
     ph_value = sensor_data_raw.get("pH Level", "Unknown")
     ph_status = "Unknown"
@@ -402,8 +1487,8 @@ def home():
 
             for log in reversed(growth_logs):
                 if log.created_at:
-                    label = log.created_at.strftime(
-                        "%b %d %H:%M"
+                    label = to_ph_time(log.created_at).strftime(
+                        "%b %d %I:%M %p"
                     )
                 else:
                     label = "Unknown"
@@ -424,10 +1509,13 @@ def home():
                 )
 
         # -----------------------------------------------------
-        # REAL-TIME / LIVE BATCH GROWTH SUMMARY
+        # LIVE 14-DAY BATCH GROWTH MONITORING
         #
-        # Each card is based on actual ClassificationLog rows
-        # saved under that batch.
+        # Realtime meaning here:
+        # - water/sensor values are truly live from the ESP32
+        # - growth is a LIVE PROJECTION between official image checks
+        # - actual growth is verified by eligible observations that are
+        #   at least 14 days apart
         # -----------------------------------------------------
         user_batches = (
             Batch.query
@@ -435,6 +1523,8 @@ def home():
             .order_by(Batch.created_date.asc())
             .all()
         )
+
+        now_for_growth = datetime.utcnow()
 
         for batch in user_batches:
             observations = (
@@ -452,131 +1542,232 @@ def home():
             if not observations:
                 continue
 
-            latest_observation = (
-                observations[-1]
-            )
+            latest_observation = observations[-1]
 
-            previous_observation = (
-                observations[-2]
-                if len(observations) >= 2
-                else None
-            )
-
-            latest_length = (
-                latest_observation.estimated_length_cm
-            )
-
-            previous_length = (
-                previous_observation.estimated_length_cm
-                if previous_observation
-                else None
-            )
-
-            length_change_cm = None
-            elapsed_days = None
-
-            if (
-                latest_length is not None
-                and previous_length is not None
-            ):
-                length_change_cm = round(
-                    latest_length
-                    - previous_length,
-                    2
+            official_references = (
+                _get_official_growth_references(
+                    observations
                 )
+            )
 
-            if (
-                previous_observation
-                and previous_observation.created_at
-                and latest_observation.created_at
-            ):
-                elapsed_days = max(
-                    0,
+            if not official_references:
+                continue
+
+            last_verified = official_references[-1]
+            previous_verified = (
+                official_references[-2]
+                if len(official_references) >= 2
+                else None
+            )
+
+            days_since_verified = (
+                _days_between(
+                    last_verified.created_at,
+                    now_for_growth
+                )
+                or 0
+            )
+
+            cycle_day = min(
+                days_since_verified,
+                GROWTH_CHECK_INTERVAL_DAYS
+            )
+
+            days_remaining = max(
+                0,
+                GROWTH_CHECK_INTERVAL_DAYS
+                - days_since_verified
+            )
+
+            cycle_progress_percent = round(
+                min(
+                    100.0,
                     (
-                        latest_observation.created_at
-                        - previous_observation.created_at
-                    ).days
+                        cycle_day
+                        / GROWTH_CHECK_INTERVAL_DAYS
+                    ) * 100.0
+                ),
+                1
+            )
+
+            next_verification_date = (
+                last_verified.created_at
+                + timedelta(
+                    days=GROWTH_CHECK_INTERVAL_DAYS
+                )
+                if last_verified.created_at
+                else None
+            )
+
+            verification_due = (
+                days_since_verified
+                >= GROWTH_CHECK_INTERVAL_DAYS
+            )
+
+            last_verified_length = (
+                last_verified.estimated_length_cm
+            )
+
+            # ---------------------------------------------
+            # Growth-rate projection
+            # ---------------------------------------------
+            daily_growth_rate_cm = None
+            predicted_current_length_cm = None
+            projected_change_cm = None
+
+            if (
+                previous_verified
+                and previous_verified.estimated_length_cm is not None
+                and last_verified_length is not None
+            ):
+                verified_interval_days = (
+                    _days_between(
+                        previous_verified.created_at,
+                        last_verified.created_at
+                    )
+                    or 0
                 )
 
-            # Growth status from the REAL previous/current
-            # observation comparison.
-            if len(observations) == 1:
-                growth_status = (
-                    "FIRST OBSERVATION"
+                if verified_interval_days > 0:
+                    daily_growth_rate_cm = (
+                        last_verified_length
+                        - previous_verified.estimated_length_cm
+                    ) / verified_interval_days
+
+                    # Do not extrapolate farther than one 14-day cycle.
+                    projection_days = min(
+                        days_since_verified,
+                        GROWTH_CHECK_INTERVAL_DAYS
+                    )
+
+                    predicted_current_length_cm = round(
+                        last_verified_length
+                        + (
+                            daily_growth_rate_cm
+                            * projection_days
+                        ),
+                        2
+                    )
+
+                    projected_change_cm = round(
+                        predicted_current_length_cm
+                        - last_verified_length,
+                        2
+                    )
+
+            # ---------------------------------------------
+            # Provisional upload information
+            # ---------------------------------------------
+            latest_is_official = (
+                latest_observation.id
+                == last_verified.id
+            )
+
+            provisional_length_cm = (
+                latest_observation.estimated_length_cm
+                if not latest_is_official
+                else None
+            )
+
+            provisional_date = (
+                latest_observation.created_at
+                if not latest_is_official
+                else None
+            )
+
+            if verification_due:
+                live_growth_status = (
+                    'VERIFICATION DUE'
                 )
-
-            elif length_change_cm is None:
-                growth_status = (
-                    "OBSERVATION SAVED"
+            elif not latest_is_official:
+                live_growth_status = (
+                    'PROVISIONAL OBSERVATION'
                 )
-
-            elif length_change_cm > 0:
-                growth_status = "GROWING"
-
-            elif length_change_cm == 0:
-                growth_status = (
-                    "NO SIZE CHANGE"
+            elif len(official_references) >= 2:
+                live_growth_status = (
+                    'LIVE PROJECTION'
                 )
-
             else:
-                growth_status = (
-                    "SIZE DECREASE DETECTED"
+                live_growth_status = (
+                    'BASELINE RECORDED'
+                )
+
+            # ---------------------------------------------
+            # Mini chart: verified measurements + projection
+            # ---------------------------------------------
+            chart_labels = []
+            chart_actual = []
+            chart_projection = []
+
+            for ref in official_references:
+                chart_labels.append(
+                    to_ph_time(ref.created_at).strftime('%b %d')
+                    if ref.created_at
+                    else 'Unknown'
+                )
+
+                chart_actual.append(
+                    round(ref.estimated_length_cm, 2)
+                    if ref.estimated_length_cm is not None
+                    else None
+                )
+
+                chart_projection.append(None)
+
+            if (
+                predicted_current_length_cm is not None
+                and last_verified_length is not None
+            ):
+                # Start the dashed prediction from the last verified point.
+                if chart_projection:
+                    chart_projection[-1] = round(
+                        last_verified_length,
+                        2
+                    )
+
+                chart_labels.append('Today')
+                chart_actual.append(None)
+                chart_projection.append(
+                    predicted_current_length_cm
                 )
 
             batch_growth_summaries.append({
-                "batch_id": batch.id,
-                "batch_name": batch.batch_name,
+                'batch_id': batch.id,
+                'batch_name': batch.batch_name,
+                'batch_quantity': batch.quantity,
 
-                # week_number is the saved observation sequence.
-                "week_number": (
-                    latest_observation.week_number
-                    or len(observations)
+                'observation_count': len(observations),
+                'official_check_count': len(official_references),
+
+                'growth_stage': latest_observation.growth,
+                'growth_confidence': latest_observation.growth_confidence,
+
+                'last_verified_length_cm': last_verified_length,
+                'last_verified_date': last_verified.created_at,
+
+                'predicted_current_length_cm': predicted_current_length_cm,
+                'projected_change_cm': projected_change_cm,
+                'daily_growth_rate_cm': (
+                    round(daily_growth_rate_cm, 4)
+                    if daily_growth_rate_cm is not None
+                    else None
                 ),
 
-                "observation_count": len(
-                    observations
-                ),
+                'provisional_length_cm': provisional_length_cm,
+                'provisional_date': provisional_date,
 
-                "current_length_cm": (
-                    latest_length
-                ),
+                'cycle_day': cycle_day,
+                'cycle_total_days': GROWTH_CHECK_INTERVAL_DAYS,
+                'cycle_progress_percent': cycle_progress_percent,
+                'days_remaining': days_remaining,
+                'next_verification_date': next_verification_date,
+                'verification_due': verification_due,
 
-                "previous_length_cm": (
-                    previous_length
-                ),
+                'growth_status': live_growth_status,
 
-                "length_change_cm": (
-                    length_change_cm
-                ),
-
-                "elapsed_days": (
-                    elapsed_days
-                ),
-
-                "growth_stage": (
-                    latest_observation.growth
-                ),
-
-                "growth_confidence": (
-                    latest_observation.growth_confidence
-                ),
-
-                "growth_status": (
-                    growth_status
-                ),
-
-                "latest_image_filename": (
-                    latest_observation.image_filename
-                ),
-
-                "latest_created_at": (
-                    latest_observation.created_at
-                ),
-
-                # Batch population comes from the actual Batch row.
-                "batch_quantity": (
-                    batch.quantity
-                )
+                'chart_labels': chart_labels,
+                'chart_actual': chart_actual,
+                'chart_projection': chart_projection,
             })
 
     return render_template(
@@ -639,37 +1830,41 @@ def settings():
     user_id = session.get('user_id')
     user = User.query.get(user_id) if user_id else None
 
-    
-    default_settings = {
-        'setting1': 'no',
-        'setting2': 0,
-        'setting3': 'no',
-        'setting4': 30
-    }
+    if not user:
+        flash('User account could not be found.', 'danger')
+        return redirect(url_for('login'))
+
+    default_settings = _get_admin_report_preferences(
+        user_id=user.id,
+        user_email=user.email
+    )
 
     if request.method == 'POST':
+        form_action = request.form.get('form_action', '').strip()
 
-        
-        if 'username' in request.form and 'email' in request.form:
+        if form_action == 'account':
+            username = request.form.get('username', '').strip()
+            new_email = request.form.get('email', '').strip()
 
-            user.username = request.form['username']
-            new_email = request.form['email']
+            if not username or not new_email:
+                flash('Username and email are required.', 'danger')
+                return redirect(url_for('settings'))
 
-            
+            user.username = username
+
             if new_email != user.email:
+                try:
+                    token = serializer.dumps(new_email, salt='email-change')
+                    verify_url = url_for(
+                        'verify_email_change',
+                        token=token,
+                        _external=True
+                    )
 
-                token = serializer.dumps(new_email, salt='email-change')
-
-                verify_url = url_for(
-                    'verify_email_change',
-                    token=token,
-                    _external=True
-                )
-
-                msg = Message(
-                    subject="Verify your new email - Craylife",
-                    recipients=["micahavrill14@gmail.com"],  # fixed email receiver
-                    body=f"""
+                    msg = Message(
+                        subject="Verify your new email - Craylife",
+                        recipients=[new_email],
+                        body=f"""
 Hello {user.username},
 
 You requested to change your email to:
@@ -682,62 +1877,227 @@ Please verify it by clicking the link below:
 
 If you did not request this change, ignore this message.
 """
-                )
+                    )
 
-                mail.send(msg)
+                    mail.send(msg)
+                    db.session.commit()
 
-                flash('Verification email sent to micahavrill14@gmail.com.', 'info')
+                    flash(
+                        'Account information updated. '
+                        'A verification email was sent to the new address.',
+                        'success'
+                    )
 
-            else:
-                flash('User info updated successfully!', 'success')
+                except Exception as error:
+                    db.session.rollback()
+                    print("[SETTINGS EMAIL UPDATE ERROR]", error, flush=True)
+                    flash(
+                        'The account update could not be completed because '
+                        'the verification email could not be sent.',
+                        'danger'
+                    )
+
+                return redirect(url_for('settings'))
 
             db.session.commit()
+            flash('Account information updated successfully.', 'success')
+            return redirect(url_for('settings'))
 
-        
-        if 'current_password' in request.form and 'new_password' in request.form:
-
-            current_password = request.form['current_password']
-            new_password = request.form['new_password']
-            confirm_password = request.form['confirm_password']
+        if form_action == 'password_request':
+            current_password = request.form.get('current_password', '')
+            new_password = request.form.get('new_password', '')
+            confirm_password = request.form.get('confirm_password', '')
 
             if not user.check_password(current_password):
                 flash('Current password is incorrect.', 'danger')
+                return redirect(url_for('settings'))
 
-            elif new_password != confirm_password:
+            if len(new_password) < 8:
+                flash(
+                    'New password must contain at least 8 characters.',
+                    'danger'
+                )
+                return redirect(url_for('settings'))
+
+            if new_password != confirm_password:
                 flash('New passwords do not match.', 'danger')
+                return redirect(url_for('settings'))
 
-            else:
-                user.set_password(new_password)
-                db.session.commit()
+            verification_code = f"{secrets.randbelow(1000000):06d}"
 
+            session['password_change_code_hash'] = generate_password_hash(
+                verification_code
+            )
+            session['pending_password_hash'] = generate_password_hash(
+                new_password
+            )
+            session['password_change_expires_at'] = (
+                datetime.utcnow() + timedelta(minutes=10)
+            ).timestamp()
+
+            try:
                 msg = Message(
-                    subject="Password changed - Craylife",
-                    recipients=["micahavrill14@gmail.com"],
+                    subject="Your Craylife password verification code",
+                    recipients=[user.email],
                     body=f"""
 Hello {user.username},
 
-Your Craylife password was successfully changed.
+We received a request to change your Craylife password.
 
-If this was not you, please reset your password immediately.
+Your verification code is:
+
+{verification_code}
+
+This code expires in 10 minutes.
+
+If you did not request this password change, you can ignore this email.
 """
                 )
-
                 mail.send(msg)
 
-                flash('Password updated successfully! Email notification sent.', 'success')
+            except Exception as error:
+                print("[PASSWORD CODE EMAIL ERROR]", error, flush=True)
 
-        
-        default_settings['setting1'] = request.form.get('setting1', default_settings['setting1'])
-        default_settings['setting2'] = request.form.get('setting2', default_settings['setting2'])
-        default_settings['setting3'] = request.form.get('setting3', default_settings['setting3'])
-        default_settings['setting4'] = request.form.get('setting4', default_settings['setting4'])
+                session.pop('password_change_code_hash', None)
+                session.pop('pending_password_hash', None)
+                session.pop('password_change_expires_at', None)
 
-        flash('System settings updated!', 'success')
+                flash(
+                    'The verification code could not be sent. '
+                    'Your password was not changed.',
+                    'danger'
+                )
+                return redirect(url_for('settings'))
 
+            flash(
+                f'A 6-digit verification code was sent to {user.email}. '
+                'Enter it below to complete the password change.',
+                'success'
+            )
+
+            return redirect(url_for('settings', verify_password='1'))
+
+        if form_action == 'password_verify':
+            entered_code = request.form.get(
+                'verification_code',
+                ''
+            ).strip()
+
+            code_hash = session.get('password_change_code_hash')
+            pending_password_hash = session.get('pending_password_hash')
+            expires_at = session.get('password_change_expires_at')
+
+            if not code_hash or not pending_password_hash or not expires_at:
+                flash(
+                    'There is no pending password change. '
+                    'Please request a new verification code.',
+                    'danger'
+                )
+                return redirect(url_for('settings'))
+
+            if datetime.utcnow().timestamp() > float(expires_at):
+                session.pop('password_change_code_hash', None)
+                session.pop('pending_password_hash', None)
+                session.pop('password_change_expires_at', None)
+
+                flash(
+                    'The verification code has expired. '
+                    'Please request a new one.',
+                    'danger'
+                )
+                return redirect(url_for('settings'))
+
+            if not check_password_hash(code_hash, entered_code):
+                flash('The verification code is incorrect.', 'danger')
+                return redirect(url_for('settings', verify_password='1'))
+
+            try:
+                user.password = pending_password_hash
+                db.session.commit()
+
+                session.pop('password_change_code_hash', None)
+                session.pop('pending_password_hash', None)
+                session.pop('password_change_expires_at', None)
+
+                flash('Password updated successfully.', 'success')
+
+            except Exception as error:
+                db.session.rollback()
+                print("[PASSWORD VERIFY UPDATE ERROR]", error, flush=True)
+                flash(
+                    'Password could not be updated. Please try again.',
+                    'danger'
+                )
+
+            return redirect(url_for('settings'))
+
+        if form_action == 'password_cancel':
+            session.pop('password_change_code_hash', None)
+            session.pop('pending_password_hash', None)
+            session.pop('password_change_expires_at', None)
+
+            flash('Pending password change cancelled.', 'info')
+            return redirect(url_for('settings'))
+
+        if form_action == 'preferences':
+            admin_email = request.form.get(
+                'admin_email',
+                ''
+            ).strip()
+
+            sensor_alerts = request.form.get(
+                'sensor_alerts',
+                'yes'
+            )
+
+            growth_alerts = request.form.get(
+                'growth_alerts',
+                'yes'
+            )
+
+            daily_summary = request.form.get(
+                'daily_summary',
+                'no'
+            )
+
+            if not admin_email:
+                admin_email = user.email
+
+            if _save_admin_report_preferences(
+                user_id=user.id,
+                admin_email=admin_email,
+                sensor_alerts=sensor_alerts,
+                growth_alerts=growth_alerts,
+                daily_summary=daily_summary
+            ):
+                flash(
+                    'Admin report notification settings saved.',
+                    'success'
+                )
+            else:
+                flash(
+                    'Report settings could not be saved.',
+                    'danger'
+                )
+
+            return redirect(url_for('settings'))
+
+        flash('Unknown settings action.', 'warning')
         return redirect(url_for('settings'))
 
-    return render_template('dashboard/settings.html', user=user, settings=default_settings)
- 
+    password_verification_pending = bool(
+        session.get('password_change_code_hash')
+        and session.get('pending_password_hash')
+        and session.get('password_change_expires_at')
+    )
+
+    return render_template(
+        'dashboard/settings.html',
+        user=user,
+        settings=default_settings,
+        password_verification_pending=password_verification_pending
+    )
+
 @app.route('/activity', methods=['GET', 'POST'])
 @login_required
 def activity():
@@ -798,7 +2158,9 @@ def download_report():
     y -= 20
 
     for act in activities[:10]:
-        pdf.drawString(50, y, f"{act.action} ({act.timestamp})")
+        local_act_time = to_ph_time(act.timestamp)
+        local_act_text = local_act_time.strftime("%Y-%m-%d %I:%M %p") if local_act_time else "Unknown"
+        pdf.drawString(50, y, f"{act.action} ({local_act_text})")
         y -= 20
 
         if y < 100:
@@ -822,41 +2184,233 @@ def download_report():
 def reports():
     user_id = session.get('user_id')
 
-    total_batches = Batch.query.filter_by(user_id=user_id).count()
+    alert_page = request.args.get('alert_page', 1, type=int)
+    growth_page = request.args.get('growth_page', 1, type=int)
+    per_page = 5
 
-    batches = Batch.query.filter_by(user_id=user_id).all()
-    inventory_items = []
+    # =========================================================
+    # LIVE SENSOR REPORT
+    # =========================================================
+    live_sensor = get_live_sensor_data()
+
+    sensor_rows = [
+        {
+            'name': 'Board Connection',
+            'value': live_sensor.get('Status', 'Disconnected'),
+            'status': (
+                'NORMAL'
+                if live_sensor.get('Status') == 'Connected'
+                else 'CRITICAL'
+            )
+        },
+        {
+            'name': 'pH Level',
+            'value': live_sensor.get('pH Level', '—'),
+            'status': live_sensor.get('pH Status', 'Unknown')
+        },
+        {
+            'name': 'Water Level',
+            'value': live_sensor.get('Water Level', '—'),
+            'status': live_sensor.get('Water Status', 'Unknown')
+        },
+        {
+            'name': 'Water Quality',
+            'value': live_sensor.get('Water Quality', '—'),
+            'status': (
+                'NORMAL'
+                if str(live_sensor.get('Water Quality', '')).upper()
+                in {'CLEAR', 'GOOD', 'NORMAL'}
+                else str(live_sensor.get('Water Quality', 'Unknown')).upper()
+            )
+        },
+        {
+            'name': 'Temperature',
+            'value': live_sensor.get('Temperature', '—'),
+            'status': live_sensor.get('Temperature Status', 'UNKNOWN')
+        }
+    ]
+
+    active_sensor_issues = sum(
+        1
+        for item in sensor_rows
+        if str(item['status']).upper()
+        not in {
+            'NORMAL',
+            'CONNECTED',
+            'NEUTRAL',
+            'GOOD',
+            'CLEAR',
+            'OK'
+        }
+    )
+
+    # =========================================================
+    # SENSOR ALERT HISTORY
+    # =========================================================
+    alerts_pagination = (
+        MonitoringAlert.query
+        .order_by(MonitoringAlert.created_at.desc())
+        .paginate(
+            page=alert_page,
+            per_page=per_page,
+            error_out=False
+        )
+    )
+
+    # =========================================================
+    # GROWTH REPORT
+    # =========================================================
+    batches = (
+        Batch.query
+        .filter_by(user_id=user_id)
+        .order_by(Batch.created_date.desc())
+        .all()
+    )
+
+    growth_reports = []
+    verification_due_count = 0
+
+    now_for_growth = datetime.utcnow()
+
     for batch in batches:
-        inv = Inventory.query.filter_by(batch_id=batch.id).first()
-        inventory_items.append({
-            'id': batch.id,
-            'name': batch.batch_name,
-            'quantity': inv.total_count if inv else batch.quantity
+        observations = (
+            ClassificationLog.query
+            .filter_by(
+                user_id=user_id,
+                batch_id=batch.id
+            )
+            .order_by(ClassificationLog.created_at.asc())
+            .all()
+        )
+
+        if not observations:
+            growth_reports.append({
+                'batch_id': batch.id,
+                'batch_name': batch.batch_name,
+                'latest_stage': 'No observation',
+                'latest_length_cm': None,
+                'observation_count': 0,
+                'last_observation_date': None,
+                'days_since_verified': None,
+                'next_check_date': None,
+                'status': 'NO DATA'
+            })
+            continue
+
+        official_refs = _get_official_growth_references(observations)
+        last_verified = official_refs[-1] if official_refs else observations[0]
+        latest = observations[-1]
+
+        days_since_verified = (
+            _days_between(
+                last_verified.created_at,
+                now_for_growth
+            )
+            or 0
+        )
+
+        next_check_date = (
+            last_verified.created_at
+            + timedelta(days=GROWTH_CHECK_INTERVAL_DAYS)
+            if last_verified.created_at
+            else None
+        )
+
+        if days_since_verified >= GROWTH_CHECK_INTERVAL_DAYS:
+            growth_status = 'VERIFICATION DUE'
+            verification_due_count += 1
+
+            alert_key = (
+                f"growth_due_sent_{batch.id}_"
+                f"{last_verified.created_at.date() if last_verified.created_at else 'unknown'}"
+            )
+
+            if not session.get(alert_key):
+                if _send_growth_due_report(
+                    batch=batch,
+                    latest_observation=latest,
+                    status=growth_status,
+                    next_check_date=next_check_date
+                ):
+                    session[alert_key] = True
+        elif latest.id != last_verified.id:
+            growth_status = 'PROVISIONAL'
+        elif len(official_refs) >= 2:
+            previous_verified = official_refs[-2]
+
+            if (
+                last_verified.estimated_length_cm is not None
+                and previous_verified.estimated_length_cm is not None
+            ):
+                change = (
+                    last_verified.estimated_length_cm
+                    - previous_verified.estimated_length_cm
+                )
+
+                if change > 0:
+                    growth_status = 'GROWTH DETECTED'
+                elif change < 0:
+                    growth_status = 'SIZE DECREASE'
+                else:
+                    growth_status = 'STABLE'
+            else:
+                growth_status = 'VERIFIED'
+        else:
+            growth_status = 'BASELINE'
+
+        growth_reports.append({
+            'batch_id': batch.id,
+            'batch_name': batch.batch_name,
+            'latest_stage': (
+                latest.growth.replace('_', ' ').title()
+                if latest.growth
+                else 'Unknown'
+            ),
+            'latest_length_cm': latest.estimated_length_cm,
+            'observation_count': len(observations),
+            'last_observation_date': latest.created_at,
+            'days_since_verified': days_since_verified,
+            'next_check_date': next_check_date,
+            'status': growth_status
         })
 
-    activities = ActivityLog.query.order_by(ActivityLog.timestamp.desc()).limit(5).all()
+    growth_total = len(growth_reports)
+    growth_pages = max(
+        1,
+        (growth_total + per_page - 1) // per_page
+    )
+    growth_page = min(
+        max(growth_page, 1),
+        growth_pages
+    )
 
-    reports = []
-    for item in inventory_items:
-        reports.append({
-            'id': item['id'],
-            'type': item['name'],
-            'count': item['quantity'],
-        })
+    growth_start = (growth_page - 1) * per_page
+    growth_end = growth_start + per_page
+    growth_page_items = growth_reports[
+        growth_start:growth_end
+    ]
 
-    classification_logs = ClassificationLog.query.order_by(
-        ClassificationLog.created_at.desc()
-    ).all()
+    recent_activities = (
+        ActivityLog.query
+        .filter_by(user_id=user_id)
+        .order_by(ActivityLog.timestamp.desc())
+        .limit(5)
+        .all()
+    )
 
     return render_template(
         'dashboard/reports.html',
-        total_batches=total_batches,
-        inventory_items=inventory_items,
-        activities=activities,
-        reports=reports,
-        classification_logs=classification_logs
+        sensor_rows=sensor_rows,
+        active_sensor_issues=active_sensor_issues,
+        alerts=alerts_pagination,
+        growth_reports=growth_page_items,
+        growth_total=growth_total,
+        growth_page=growth_page,
+        growth_pages=growth_pages,
+        verification_due_count=verification_due_count,
+        tracked_batch_count=len(batches),
+        recent_activities=recent_activities
     )
- 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -880,6 +2434,7 @@ def login():
                 session.clear()
                 session['user_id'] = user.id
                 session['username'] = user.username
+                session['user_email'] = user.email
 
                 flash('Login successful!', 'success')
 
@@ -1031,7 +2586,9 @@ def create_batch():
         allowed_extensions = {
             'jpg',
             'jpeg',
-            'png'
+            'png',
+            'heic',
+            'heif'
         }
 
         saved_count = 0
@@ -1066,21 +2623,55 @@ def create_batch():
             if extension not in allowed_extensions:
                 continue
 
-            unique_filename = (
-                f"{uuid.uuid4().hex}_"
-                f"{filename}"
-            )
+            if extension in {'heic', 'heif'}:
+                try:
+                    image = Image.open(file.stream).convert("RGB")
 
-            destination = os.path.join(
-                batch_folder,
-                unique_filename
-            )
+                    base_name = os.path.splitext(filename)[0]
 
-            file.save(
-                destination
-            )
+                    unique_filename = (
+                        f"{uuid.uuid4().hex}_"
+                        f"{base_name}.jpg"
+                    )
 
-            saved_count += 1
+                    destination = os.path.join(
+                        batch_folder,
+                        unique_filename
+                    )
+
+                    image.save(
+                        destination,
+                        "JPEG",
+                        quality=95
+                    )
+
+                    saved_count += 1
+
+                except Exception as error:
+                    print(
+                        "[HEIC CONVERSION ERROR]",
+                        filename,
+                        error
+                    )
+
+                    continue
+
+            else:
+                unique_filename = (
+                    f"{uuid.uuid4().hex}_"
+                    f"{filename}"
+                )
+
+                destination = os.path.join(
+                    batch_folder,
+                    unique_filename
+                )
+
+                file.save(
+                    destination
+                )
+
+                saved_count += 1
 
         db.session.commit()
 
@@ -1373,19 +2964,92 @@ def delete_batch_record(batch_id):
 @login_required
 def inventory():
     user_id = session.get('user_id')
-    batches = Batch.query.filter_by(user_id=user_id).all()
 
-    inventory_items = []
-    for batch in batches:
-        inv = Inventory.query.filter_by(batch_id=batch.id).first()
-        inventory_items.append({
-            'id': batch.id,
-            'name': batch.batch_name,
-            'quantity': inv.total_count if inv else batch.quantity
+    classification_logs = (
+        ClassificationLog.query
+        .filter_by(user_id=user_id)
+        .order_by(ClassificationLog.created_at.desc())
+        .all()
+    )
+
+    total_classifications = len(classification_logs)
+
+    male_count = sum(
+        1 for log in classification_logs
+        if (log.gender or '').strip().lower() == 'male'
+    )
+
+    female_count = sum(
+        1 for log in classification_logs
+        if (log.gender or '').strip().lower() == 'female'
+    )
+
+    batch_classifications = sum(
+        1 for log in classification_logs
+        if log.batch_id is not None
+    )
+
+    quick_classifications = (
+        total_classifications
+        - batch_classifications
+    )
+
+    growth_stage_counts = {
+        'mid_juvenile': 0,
+        'juvenile': 0,
+        'mid_adult': 0,
+        'sub_adult': 0,
+        'adult': 0
+    }
+
+    for log in classification_logs:
+        key = (log.growth or '').strip().lower()
+
+        if key in growth_stage_counts:
+            growth_stage_counts[key] += 1
+
+    recent_records = []
+
+    for log in classification_logs[:12]:
+        recent_records.append({
+            'id': log.id,
+            'image_filename': log.image_filename,
+            'gender': log.gender or 'Unknown',
+            'growth': (
+                log.growth.replace('_', ' ').title()
+                if log.growth
+                else 'Unknown'
+            ),
+            'gender_confidence': log.gender_confidence,
+            'growth_confidence': log.growth_confidence,
+            'estimated_length_cm': log.estimated_length_cm,
+            'created_at': log.created_at,
+            'batch_name': (
+                log.batch.batch_name
+                if log.batch
+                else None
+            ),
+            'mode': (
+                'Batch Tracking'
+                if log.batch_id is not None
+                else 'Quick Classify'
+            )
         })
 
-    return render_template('dashboard/inventory.html', inventory_items=inventory_items)
+    classification_summary = {
+        'total_classifications': total_classifications,
+        'male_count': male_count,
+        'female_count': female_count,
+        'batch_classifications': batch_classifications,
+        'quick_classifications': quick_classifications,
+        'growth_stage_counts': growth_stage_counts
+    }
 
+    return render_template(
+        'dashboard/inventory.html',
+        classification_summary=classification_summary,
+        recent_records=recent_records
+    )
 
 @app.route('/item/edit/<int:item_id>', methods=['GET', 'POST'])
 @login_required
@@ -1666,6 +3330,8 @@ def classify():
         latest_batch_log = None
         observation_number = None
         week_number = None
+        monitoring_period = None
+        sample_number = None
 
         # =====================================================
         # BATCH TRACKING
@@ -1696,29 +3362,31 @@ def classify():
                 )
                 return render_classify_page()
 
-            # Get latest classification/observation of this batch.
-            latest_batch_log = (
+            existing_batch_observations = (
                 ClassificationLog.query
                 .filter_by(
                     user_id=user_id,
-                    batch_id=batch_id
+                    batch_id=selected_batch.id
                 )
                 .order_by(
-                    ClassificationLog.created_at.desc()
+                    ClassificationLog.created_at.asc()
                 )
-                .first()
+                .all()
             )
 
-            # Automatic observation number.
-            if latest_batch_log:
-                observation_number = (
-                    (latest_batch_log.week_number or 0) + 1
-                )
-            else:
-                observation_number = 1
+            latest_batch_log = (
+                existing_batch_observations[-1]
+                if existing_batch_observations
+                else None
+            )
 
-            # Keep using week_number DB column.
-            # For now it represents observation sequence.
+            batch_observation_count = len(existing_batch_observations)
+
+            observation_number = batch_observation_count + 1
+
+            # Keep these fields for compatibility with the current template.
+            monitoring_period = observation_number
+            sample_number = observation_number
             week_number = observation_number
 
         # =====================================================
@@ -2020,71 +3688,152 @@ def classify():
                 estimated_length_value = None
 
         # =====================================================
-        # OPTIONAL BATCH GROWTH COMPARISON
+        # 14-DAY BATCH GROWTH COMPARISON
         # =====================================================
         previous_length = None
         length_change = None
         elapsed_days = None
         growth_tracking_status = None
         previous_growth_stage = None
+        next_check_date = None
+        days_remaining = None
 
         if selected_batch:
+            current_time_for_tracking = datetime.utcnow()
 
-            growth_tracking_status = (
-                "FIRST OBSERVATION"
+            existing_batch_observations = (
+                ClassificationLog.query
+                .filter_by(
+                    user_id=user_id,
+                    batch_id=selected_batch.id
+                )
+                .order_by(
+                    ClassificationLog.created_at.asc()
+                )
+                .all()
             )
 
-            if latest_batch_log:
+            # FIRST UPLOAD = BASELINE
+            if not existing_batch_observations:
 
-                previous_length = (
-                    latest_batch_log.estimated_length_cm
-                )
+                growth_tracking_status = "BASELINE RECORDED"
 
-                previous_growth_stage = (
-                    latest_batch_log.growth
-                )
-
-                # Calculate how many days passed.
-                if latest_batch_log.created_at:
-
-                    elapsed = (
-                        datetime.utcnow()
-                        - latest_batch_log.created_at
+                next_check_date = (
+                    current_time_for_tracking
+                    + timedelta(
+                        days=GROWTH_CHECK_INTERVAL_DAYS
                     )
+                )
 
-                    elapsed_days = max(
+                days_remaining = (
+                    GROWTH_CHECK_INTERVAL_DAYS
+                )
+
+            else:
+                # Build the official timeline using ONLY the
+                # already-saved observations.
+                official_references = (
+                    _get_official_growth_references(
+                        existing_batch_observations
+                    )
+                )
+
+                last_official_reference = (
+                    official_references[-1]
+                    if official_references
+                    else existing_batch_observations[0]
+                )
+
+                elapsed_days = (
+                    _days_between(
+                        last_official_reference.created_at,
+                        current_time_for_tracking
+                    )
+                    or 0
+                )
+
+                # ---------------------------------------------
+                # NOT YET 14 DAYS:
+                # Save this upload to history only.
+                # ---------------------------------------------
+                if elapsed_days < GROWTH_CHECK_INTERVAL_DAYS:
+
+                    days_remaining = max(
                         0,
-                        elapsed.days
+                        GROWTH_CHECK_INTERVAL_DAYS
+                        - elapsed_days
                     )
 
-                # Compare previous and current estimated length.
-                if (
-                    previous_length is not None
-                    and estimated_length_value is not None
-                ):
-
-                    length_change = (
-                        estimated_length_value
-                        - previous_length
+                    next_check_date = (
+                        last_official_reference.created_at
+                        + timedelta(
+                            days=GROWTH_CHECK_INTERVAL_DAYS
+                        )
+                        if last_official_reference.created_at
+                        else None
                     )
 
-                    if length_change > 0:
+                    growth_tracking_status = (
+                        f"WAITING FOR 2-WEEK CHECK "
+                        f"({days_remaining} DAY(S) REMAINING)"
+                    )
 
-                        growth_tracking_status = (
-                            "GROWING"
+                # ---------------------------------------------
+                # 14 DAYS OR MORE:
+                # Compare this new upload against the last
+                # official reference.
+                # ---------------------------------------------
+                else:
+
+                    previous_length = (
+                        last_official_reference
+                        .estimated_length_cm
+                    )
+
+                    previous_growth_stage = (
+                        last_official_reference.growth
+                    )
+
+                    if (
+                        previous_length is not None
+                        and estimated_length_value is not None
+                    ):
+
+                        length_change = (
+                            estimated_length_value
+                            - previous_length
                         )
 
-                    elif length_change == 0:
+                        if length_change > 0.05:
+                            growth_tracking_status = (
+                                "GROWTH DETECTED"
+                            )
 
-                        growth_tracking_status = (
-                            "NO SIZE CHANGE"
-                        )
+                        elif length_change < -0.05:
+                            growth_tracking_status = (
+                                "SIZE DECREASE DETECTED"
+                            )
+
+                        else:
+                            growth_tracking_status = (
+                                "NO SIZE CHANGE"
+                            )
 
                     else:
-
                         growth_tracking_status = (
-                            "SIZE DECREASE DETECTED"
+                            "2-WEEK CHECK RECORDED"
                         )
+
+                    next_check_date = (
+                        current_time_for_tracking
+                        + timedelta(
+                            days=GROWTH_CHECK_INTERVAL_DAYS
+                        )
+                    )
+
+                    days_remaining = (
+                        GROWTH_CHECK_INTERVAL_DAYS
+                    )
 
         # =====================================================
         # SEND TRACKING INFORMATION TO HTML
@@ -2111,6 +3860,25 @@ def classify():
             else None
         )
 
+        result['monitoring_period'] = (
+            monitoring_period if selected_batch else None
+        )
+        result['sample_number'] = (
+            sample_number if selected_batch else None
+        )
+        result['sample_target'] = (
+            SAMPLE_TARGET if selected_batch else None
+        )
+        result['period_complete'] = bool(
+            selected_batch
+            and growth_tracking_status in {
+                "GROWTH DETECTED",
+                "SIZE DECREASE DETECTED",
+                "NO SIZE CHANGE",
+                "2-WEEK CHECK RECORDED"
+            }
+        )
+
         result['previous_length_cm'] = (
             previous_length
         )
@@ -2134,6 +3902,16 @@ def classify():
 
         result['previous_growth_stage'] = (
             previous_growth_stage
+        )
+
+        result['next_check_date'] = (
+            next_check_date.strftime("%b %d, %Y")
+            if next_check_date
+            else None
+        )
+
+        result['days_remaining'] = (
+            days_remaining
         )
 
         # =====================================================
@@ -2236,6 +4014,25 @@ def classify():
             db.session.commit()
 
             if selected_batch:
+
+                socketio.emit(
+                    "batch_growth_update",
+                    {
+                        "batch_id": selected_batch.id,
+                        "monitoring_period": monitoring_period,
+                        "sample_number": sample_number,
+                        "sample_target": SAMPLE_TARGET,
+                        "period_complete": (
+                            growth_tracking_status in {
+                                "GROWTH DETECTED",
+                                "SIZE DECREASE DETECTED",
+                                "NO SIZE CHANGE",
+                                "2-WEEK CHECK RECORDED"
+                            }
+                        )
+                    },
+                    room=f"user_{user_id}"
+                )
 
                 print(
                     "[OK] Batch observation saved:",
@@ -2429,6 +4226,232 @@ def add_batch_growth(batch_id):
         batch=batch
     )
     
+
+# =========================================================
+# BATCH OBSERVATION CRUD
+# =========================================================
+
+@app.route(
+    '/batch/<int:batch_id>/observation/<int:observation_id>/edit',
+    methods=['GET', 'POST']
+)
+@login_required
+def edit_batch_observation(batch_id, observation_id):
+    user_id = session.get('user_id')
+
+    batch = (
+        Batch.query
+        .filter_by(
+            id=batch_id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    observation = (
+        ClassificationLog.query
+        .filter_by(
+            id=observation_id,
+            batch_id=batch.id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    if request.method == 'POST':
+        growth = (
+            request.form.get('growth', '')
+            .strip()
+            .lower()
+        )
+
+        estimated_length_cm = request.form.get(
+            'estimated_length_cm',
+            type=float
+        )
+
+        allowed_growth_stages = {
+            'mid_juvenile',
+            'juvenile',
+            'mid_adult',
+            'sub_adult',
+            'adult'
+        }
+
+        if growth not in allowed_growth_stages:
+            flash(
+                'Please choose a valid growth stage.',
+                'danger'
+            )
+            return render_template(
+                'dashboard/edit_observation.html',
+                batch=batch,
+                observation=observation
+            )
+
+        if (
+            estimated_length_cm is not None
+            and estimated_length_cm < 0
+        ):
+            flash(
+                'Estimated length cannot be negative.',
+                'danger'
+            )
+            return render_template(
+                'dashboard/edit_observation.html',
+                batch=batch,
+                observation=observation
+            )
+
+        observation.growth = growth
+        observation.estimated_length_cm = (
+            estimated_length_cm
+        )
+
+        db.session.add(
+            ActivityLog(
+                user_id=user_id,
+                action=(
+                    f'Updated observation {observation.id} '
+                    f'for batch "{batch.batch_name}"'
+                ),
+                timestamp=datetime.utcnow()
+            )
+        )
+
+        db.session.commit()
+
+        flash(
+            'Observation updated successfully.',
+            'success'
+        )
+
+        return redirect(
+            url_for(
+                'batch_detail',
+                batch_id=batch.id
+            )
+        )
+
+    return render_template(
+        'dashboard/edit_observation.html',
+        batch=batch,
+        observation=observation
+    )
+
+
+@app.route(
+    '/batch/<int:batch_id>/observation/<int:observation_id>/delete',
+    methods=['POST']
+)
+@login_required
+def delete_batch_observation(batch_id, observation_id):
+    user_id = session.get('user_id')
+
+    batch = (
+        Batch.query
+        .filter_by(
+            id=batch_id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    observation = (
+        ClassificationLog.query
+        .filter_by(
+            id=observation_id,
+            batch_id=batch.id,
+            user_id=user_id
+        )
+        .first_or_404()
+    )
+
+    image_filename = observation.image_filename
+
+    try:
+        db.session.delete(observation)
+        db.session.flush()
+
+        # Keep week_number / observation order clean after deletion.
+        remaining_observations = (
+            ClassificationLog.query
+            .filter_by(
+                user_id=user_id,
+                batch_id=batch.id
+            )
+            .order_by(
+                ClassificationLog.created_at.asc()
+            )
+            .all()
+        )
+
+        for index, item in enumerate(
+            remaining_observations,
+            start=1
+        ):
+            item.week_number = index
+
+        db.session.add(
+            ActivityLog(
+                user_id=user_id,
+                action=(
+                    f'Deleted an observation from '
+                    f'batch "{batch.batch_name}"'
+                ),
+                timestamp=datetime.utcnow()
+            )
+        )
+
+        db.session.commit()
+
+        # Remove only the classifier-upload copy, if it exists.
+        # Batch reference images are stored in another folder
+        # and are not touched here.
+        if image_filename:
+            image_path = os.path.join(
+                app.root_path,
+                'static',
+                'uploads',
+                image_filename
+            )
+
+            if os.path.isfile(image_path):
+                try:
+                    os.remove(image_path)
+                except OSError as file_error:
+                    print(
+                        '[WARNING] Could not remove observation image:',
+                        file_error
+                    )
+
+        flash(
+            'Observation deleted successfully. '
+            'Growth tracking was recalculated automatically.',
+            'success'
+        )
+
+    except Exception as error:
+        db.session.rollback()
+
+        print(
+            '[ERROR] Failed to delete observation:',
+            error
+        )
+
+        flash(
+            'Observation could not be deleted.',
+            'danger'
+        )
+
+    return redirect(
+        url_for(
+            'batch_detail',
+            batch_id=batch.id
+        )
+    )
+
+
 @app.route('/batch/<int:batch_id>')
 @login_required
 def batch_detail(batch_id):
@@ -2472,55 +4495,194 @@ def batch_detail(batch_id):
     latest_change_cm = None
     latest_tracking_status = "NO OBSERVATIONS"
 
+    next_check_date = None
+    days_remaining = None
+    previous_eligible_observation = None
+
+    # =====================================================
+    # 14-DAY GROWTH TRACKING
+    # =====================================================
+
     if first_observation and latest_observation:
+
         if (
-            first_observation.estimated_length_cm is not None
-            and latest_observation.estimated_length_cm is not None
+            first_observation.created_at
+            and latest_observation.created_at
         ):
+            elapsed_days = _days_between(
+                first_observation.created_at,
+                latest_observation.created_at
+            )
+
+        # -----------------------------------------
+        # FIRST OBSERVATION = BASELINE
+        # -----------------------------------------
+        if len(observations) == 1:
+
+            latest_tracking_status = (
+                "BASELINE RECORDED"
+            )
+
+            days_remaining = (
+                GROWTH_CHECK_INTERVAL_DAYS
+            )
+
+            if first_observation.created_at:
+
+                next_check_date = (
+                    first_observation.created_at
+                    + timedelta(
+                        days=GROWTH_CHECK_INTERVAL_DAYS
+                    )
+                )
+
+        # -----------------------------------------
+        # SECOND / FUTURE OBSERVATIONS
+        # -----------------------------------------
+        else:
+
+            reference_time = (
+                latest_observation.created_at
+                or datetime.utcnow()
+            )
+
+            # Build official references only from observations
+            # BEFORE the latest upload.
+            previous_observations = observations[:-1]
+
+            official_references = (
+                _get_official_growth_references(
+                    previous_observations
+                )
+            )
+
+            last_official_reference = (
+                official_references[-1]
+                if official_references
+                else first_observation
+            )
+
+            elapsed_from_reference = (
+                _days_between(
+                    last_official_reference.created_at,
+                    reference_time
+                )
+                or 0
+            )
+
+            # -------------------------------------
+            # LESS THAN 14 DAYS
+            # -------------------------------------
+            if elapsed_from_reference < GROWTH_CHECK_INTERVAL_DAYS:
+
+                days_remaining = max(
+                    0,
+                    GROWTH_CHECK_INTERVAL_DAYS
+                    - elapsed_from_reference
+                )
+
+                if last_official_reference.created_at:
+
+                    next_check_date = (
+                        last_official_reference.created_at
+                        + timedelta(
+                            days=GROWTH_CHECK_INTERVAL_DAYS
+                        )
+                    )
+
+                latest_tracking_status = (
+                    f"WAITING FOR 2-WEEK CHECK "
+                    f"({days_remaining} DAY(S) REMAINING)"
+                )
+
+            # -------------------------------------
+            # 14 DAYS OR MORE = OFFICIAL CHECK
+            # -------------------------------------
+            else:
+
+                previous_eligible_observation = (
+                    last_official_reference
+                )
+
+                previous_length = (
+                    previous_eligible_observation
+                    .estimated_length_cm
+                )
+
+                current_length = (
+                    latest_observation
+                    .estimated_length_cm
+                )
+
+                if (
+                    previous_length is not None
+                    and current_length is not None
+                ):
+
+                    latest_change_cm = round(
+                        current_length
+                        - previous_length,
+                        2
+                    )
+
+                    if latest_change_cm > 0.05:
+
+                        latest_tracking_status = (
+                            "GROWTH DETECTED"
+                        )
+
+                    elif latest_change_cm < -0.05:
+
+                        latest_tracking_status = (
+                            "SIZE DECREASE DETECTED"
+                        )
+
+                    else:
+
+                        latest_tracking_status = (
+                            "NO SIZE CHANGE"
+                        )
+
+                else:
+
+                    latest_tracking_status = (
+                        "2-WEEK CHECK RECORDED"
+                    )
+
+                if latest_observation.created_at:
+
+                    next_check_date = (
+                        latest_observation.created_at
+                        + timedelta(
+                            days=GROWTH_CHECK_INTERVAL_DAYS
+                        )
+                    )
+
+                days_remaining = (
+                    GROWTH_CHECK_INTERVAL_DAYS
+                )
+
+        # -----------------------------------------
+        # TOTAL CHANGE FROM FIRST TO LATEST
+        # -----------------------------------------
+        if (
+            first_observation.estimated_length_cm
+            is not None
+            and
+            latest_observation.estimated_length_cm
+            is not None
+        ):
+
             total_growth_cm = round(
                 latest_observation.estimated_length_cm
                 - first_observation.estimated_length_cm,
                 2
             )
 
-        if (
-            first_observation.created_at
-            and latest_observation.created_at
-        ):
-            elapsed_days = max(
-                0,
-                (
-                    latest_observation.created_at
-                    - first_observation.created_at
-                ).days
-            )
+    # =====================================================
+    # BATCH REFERENCE IMAGES
+    # =====================================================
 
-    if len(observations) == 1:
-        latest_tracking_status = "FIRST OBSERVATION"
-
-    elif len(observations) >= 2:
-        previous_observation = observations[-2]
-
-        if (
-            previous_observation.estimated_length_cm is not None
-            and latest_observation.estimated_length_cm is not None
-        ):
-            latest_change_cm = round(
-                latest_observation.estimated_length_cm
-                - previous_observation.estimated_length_cm,
-                2
-            )
-
-            if latest_change_cm > 0:
-                latest_tracking_status = "GROWING"
-            elif latest_change_cm == 0:
-                latest_tracking_status = "NO SIZE CHANGE"
-            else:
-                latest_tracking_status = "SIZE DECREASE DETECTED"
-        else:
-            latest_tracking_status = "OBSERVATION SAVED"
-
-    # Initial reference images uploaded when this batch was created.
     reference_images = []
 
     batch_folder = os.path.join(
@@ -2538,14 +4700,17 @@ def batch_detail(batch_id):
     }
 
     if os.path.isdir(batch_folder):
+
         for filename in sorted(
             os.listdir(batch_folder)
         ):
+
             extension = os.path.splitext(
                 filename
             )[1].lower()
 
             if extension in allowed_extensions:
+
                 reference_images.append(
                     url_for(
                         'static',
@@ -2557,15 +4722,42 @@ def batch_detail(batch_id):
                     )
                 )
 
+    # =====================================================
+    # SEND TO BATCH DETAIL HTML
+    # =====================================================
+
     return render_template(
         'dashboard/batch_detail.html',
+
         batch=batch,
+
         observations=observations,
+
         first_observation=first_observation,
+
         latest_observation=latest_observation,
+
         total_growth_cm=total_growth_cm,
+
         elapsed_days=elapsed_days,
+
         latest_change_cm=latest_change_cm,
-        latest_tracking_status=latest_tracking_status,
-        reference_images=reference_images
+
+        latest_tracking_status=(
+            latest_tracking_status
+        ),
+
+        reference_images=reference_images,
+
+        growth_check_interval_days=(
+            GROWTH_CHECK_INTERVAL_DAYS
+        ),
+
+        next_check_date=next_check_date,
+
+        days_remaining=days_remaining,
+
+        previous_eligible_observation=(
+            previous_eligible_observation
+        )
     )

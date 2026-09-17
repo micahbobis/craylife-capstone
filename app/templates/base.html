@@ -344,38 +344,109 @@
 
 
         /* =========================================
-           FLASH MESSAGES
+           GLOBAL NOTIFICATION MODAL
            ========================================= */
 
-        .flashes {
-            list-style: none;
-
-            padding: 0;
-
-            margin:
-                0 0 18px;
+        .notification-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(7, 22, 24, .52);
+            backdrop-filter: blur(3px);
         }
 
+        .notification-overlay.hidden {
+            display: none;
+        }
 
-        .flash-message {
-            padding: 12px 15px;
+        .notification-modal {
+            width: min(420px, 100%);
+            padding: 24px;
+            border-radius: 20px;
+            background: #ffffff;
+            color: #1f2937;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, .22);
+            text-align: center;
+            animation: notificationPop .18s ease-out;
+        }
 
-            margin-bottom: 9px;
+        .notification-icon {
+            width: 58px;
+            height: 58px;
+            margin: 0 auto 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 24px;
+        }
 
-            border-radius: 12px;
+        .notification-icon.success {
+            color: #157347;
+            background: rgba(25, 135, 84, .12);
+        }
 
-            font-size: 13px;
+        .notification-icon.danger,
+        .notification-icon.error {
+            color: #b02a37;
+            background: rgba(220, 53, 69, .12);
+        }
 
-            font-weight: 700;
+        .notification-icon.warning {
+            color: #9a6700;
+            background: rgba(245, 158, 11, .15);
+        }
 
-            border:
-                1px solid
-                rgba(
-                    255,
-                    255,
-                    255,
-                    .10
-                );
+        .notification-icon.info {
+            color: #0f5f7f;
+            background: rgba(52, 152, 219, .13);
+        }
+
+        .notification-title {
+            margin: 0 0 8px;
+            font-size: 20px;
+            font-weight: 900;
+        }
+
+        .notification-message {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #4b5563;
+        }
+
+        .notification-ok-btn {
+            min-width: 110px;
+            min-height: 42px;
+            margin-top: 20px;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 11px;
+            color: #ffffff;
+            background: linear-gradient(135deg, #0f7f7a, #159f91);
+            font-family: inherit;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .notification-ok-btn:hover {
+            opacity: .92;
+        }
+
+        @keyframes notificationPop {
+            from {
+                opacity: 0;
+                transform: translateY(8px) scale(.98);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
         }
 
 
@@ -586,26 +657,61 @@
 
                 {% if messages %}
 
-                    <ul class="flashes">
-
+                    <div
+                        id="globalNotificationData"
+                        style="display:none;"
+                    >
                         {% for category, message in messages %}
-
-                            <li
-                                class="
-                                    flash-message
-                                    {{ category }}
-                                "
-                            >
-                                {{ message }}
-                            </li>
-
+                            <div
+                                class="notification-data-item"
+                                data-category="{{ category }}"
+                                data-message="{{ message|e }}"
+                            ></div>
                         {% endfor %}
-
-                    </ul>
+                    </div>
 
                 {% endif %}
 
             {% endwith %}
+
+            <div
+                id="globalNotificationOverlay"
+                class="notification-overlay hidden"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="globalNotificationTitle"
+            >
+                <div class="notification-modal">
+
+                    <div
+                        id="globalNotificationIcon"
+                        class="notification-icon info"
+                    >
+                        <i class="fa-solid fa-circle-info"></i>
+                    </div>
+
+                    <h3
+                        id="globalNotificationTitle"
+                        class="notification-title"
+                    >
+                        Notification
+                    </h3>
+
+                    <p
+                        id="globalNotificationMessage"
+                        class="notification-message"
+                    ></p>
+
+                    <button
+                        type="button"
+                        id="globalNotificationOk"
+                        class="notification-ok-btn"
+                    >
+                        OK
+                    </button>
+
+                </div>
+            </div>
 
 
             {% block content %}
@@ -629,6 +735,119 @@
 
 
     </div>
+
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const dataContainer = document.getElementById("globalNotificationData");
+            const overlay = document.getElementById("globalNotificationOverlay");
+            const icon = document.getElementById("globalNotificationIcon");
+            const title = document.getElementById("globalNotificationTitle");
+            const message = document.getElementById("globalNotificationMessage");
+            const okButton = document.getElementById("globalNotificationOk");
+
+            if (!dataContainer || !overlay || !icon || !title || !message || !okButton) {
+                return;
+            }
+
+            const notifications = Array.from(
+                dataContainer.querySelectorAll(".notification-data-item")
+            ).map(function (item) {
+                return {
+                    category: item.dataset.category || "info",
+                    message: item.dataset.message || ""
+                };
+            });
+
+            if (!notifications.length) {
+                return;
+            }
+
+            let currentIndex = 0;
+
+            function getNotificationConfig(category) {
+                const normalized = String(category || "info").toLowerCase();
+
+                if (normalized === "success") {
+                    return {
+                        title: "Success",
+                        iconClass: "success",
+                        iconHtml: '<i class="fa-solid fa-circle-check"></i>'
+                    };
+                }
+
+                if (normalized === "danger" || normalized === "error") {
+                    return {
+                        title: "Error",
+                        iconClass: "danger",
+                        iconHtml: '<i class="fa-solid fa-circle-xmark"></i>'
+                    };
+                }
+
+                if (normalized === "warning") {
+                    return {
+                        title: "Notice",
+                        iconClass: "warning",
+                        iconHtml: '<i class="fa-solid fa-triangle-exclamation"></i>'
+                    };
+                }
+
+                return {
+                    title: "Notification",
+                    iconClass: "info",
+                    iconHtml: '<i class="fa-solid fa-circle-info"></i>'
+                };
+            }
+
+            function showNotification(index) {
+                const notification = notifications[index];
+
+                if (!notification) {
+                    overlay.classList.add("hidden");
+                    return;
+                }
+
+                const config = getNotificationConfig(notification.category);
+
+                title.textContent = config.title;
+                message.textContent = notification.message;
+                icon.className = "notification-icon " + config.iconClass;
+                icon.innerHTML = config.iconHtml;
+
+                overlay.classList.remove("hidden");
+                okButton.focus();
+            }
+
+            function closeOrNext() {
+                currentIndex += 1;
+
+                if (currentIndex < notifications.length) {
+                    showNotification(currentIndex);
+                } else {
+                    overlay.classList.add("hidden");
+                }
+            }
+
+            okButton.addEventListener("click", closeOrNext);
+
+            overlay.addEventListener("click", function (event) {
+                if (event.target === overlay) {
+                    closeOrNext();
+                }
+            });
+
+            document.addEventListener("keydown", function (event) {
+                if (
+                    event.key === "Escape" &&
+                    !overlay.classList.contains("hidden")
+                ) {
+                    closeOrNext();
+                }
+            });
+
+            showNotification(currentIndex);
+        });
+    </script>
 
 </body>
 

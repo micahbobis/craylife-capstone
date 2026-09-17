@@ -41,122 +41,83 @@ Batch Folders - Craylife
          ========================================= -->
     {% if batch_items %}
 
-    <div class="batch-folder-grid">
+    <div class="batch-list">
 
         {% for item in batch_items %}
 
-        <div class="panel glow batch-folder-card">
+        <div class="panel glow batch-list-item">
 
-            <!-- ===============================
-                 TOP: FOLDER + OPEN
-                 =============================== -->
-            <div class="batch-folder-top">
+            <div class="batch-list-main">
 
-                <div class="batch-folder-icon">
+                <div class="batch-list-icon">
                     <i class="fa-solid fa-folder"></i>
                 </div>
 
+                <div class="batch-list-info">
+                    <div class="batch-list-title-row">
+                        <h3>{{ item.batch.batch_name }}</h3>
+
+                        <span class="batch-list-status">
+                            {{ item.observation_count }}
+                            observation{{ '' if item.observation_count == 1 else 's' }}
+                        </span>
+                    </div>
+
+                    <div class="batch-list-meta">
+
+                        <span>
+                            <i class="fa-solid fa-fish"></i>
+                            <strong>{{ item.batch.quantity or 0 }}</strong>
+                            crayfish
+                        </span>
+
+                        <span>
+                            <i class="fa-solid fa-chart-line"></i>
+
+                            {% if item.latest_observation %}
+                                Latest:
+                                <strong>
+                                    {{
+                                        item.latest_observation.growth
+                                        .replace('_', ' ')
+                                        .title()
+                                        if item.latest_observation.growth
+                                        else 'Unknown'
+                                    }}
+                                </strong>
+                            {% else %}
+                                <strong>No observation yet</strong>
+                            {% endif %}
+                        </span>
+
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="batch-list-actions">
+
                 <a
-                    href="{{ url_for(
-                        'batch_detail',
-                        batch_id=item.batch.id
-                    ) }}"
+                    href="{{ url_for('batch_detail', batch_id=item.batch.id) }}"
                     class="batch-open-btn"
                 >
                     <i class="fa-solid fa-folder-open"></i>
                     Open
                 </a>
 
-            </div>
-
-
-            <!-- ===============================
-                 BATCH INFORMATION
-                 =============================== -->
-            <div class="batch-folder-info">
-
-                <h3>
-                    {{ item.batch.batch_name }}
-                </h3>
-
-                <div class="batch-folder-meta">
-
-                    <span>
-                        <i class="fa-solid fa-fish"></i>
-
-                        {{ item.batch.quantity or 0 }}
-                        crayfish
-                    </span>
-
-
-                    <span>
-                        <i class="fa-solid fa-camera"></i>
-
-                        {{ item.observation_count }}
-                        observation(s)
-                    </span>
-
-
-                    {% if item.latest_observation %}
-
-                    <span>
-                        <i class="fa-solid fa-chart-line"></i>
-
-                        Latest:
-
-                        {{
-                            item.latest_observation.growth
-                            .replace('_', ' ')
-                            .title()
-                            if item.latest_observation.growth
-                            else 'Unknown'
-                        }}
-                    </span>
-
-                    {% else %}
-
-                    <span>
-                        <i class="fa-solid fa-chart-line"></i>
-                        Latest: No observation yet
-                    </span>
-
-                    {% endif %}
-
-                </div>
-
-            </div>
-
-
-            <!-- ===============================
-                 BOTTOM: EDIT + DELETE
-                 =============================== -->
-            <div class="batch-folder-actions">
-
                 <a
-                    href="{{ url_for(
-                        'edit_batch',
-                        batch_id=item.batch.id
-                    ) }}"
+                    href="{{ url_for('edit_batch', batch_id=item.batch.id) }}"
                     class="batch-edit-btn"
                 >
                     <i class="fa-solid fa-pen"></i>
                     Edit
                 </a>
 
-
                 <form
                     method="POST"
-                    action="{{ url_for(
-                        'delete_batch_record',
-                        batch_id=item.batch.id
-                    ) }}"
-                    onsubmit="
-                        return confirm(
-                            'Delete {{ item.batch.batch_name }} and all of its observations?'
-                        );
-                    "
+                    action="{{ url_for('delete_batch_record', batch_id=item.batch.id) }}"
+                    onsubmit="return confirm('Delete {{ item.batch.batch_name }} and all of its observations?');"
                 >
-
                     <input
                         type="hidden"
                         name="csrf_token"
@@ -170,7 +131,6 @@ Batch Folders - Craylife
                         <i class="fa-solid fa-trash"></i>
                         Delete
                     </button>
-
                 </form>
 
             </div>
@@ -181,10 +141,12 @@ Batch Folders - Craylife
 
     </div>
 
+    <div class="panel glow batches-quote">
+        <i class="fa-solid fa-quote-left"></i>
+        <p>Organized records make every growth cycle easier to monitor.</p>
+        <span>CRAYLIFE BATCH MONITORING</span>
+    </div>
 
-    <!-- =========================================
-         EMPTY STATE
-         ========================================= -->
     {% else %}
 
     <div class="panel glow empty-batches">
@@ -193,14 +155,9 @@ Batch Folders - Craylife
             <i class="fa-solid fa-folder-open"></i>
         </div>
 
-        <h3>
-            No batches yet
-        </h3>
+        <h3>No batches yet</h3>
 
-        <p>
-            Create your first batch to start
-            growth tracking.
-        </p>
+        <p>Create your first batch to start growth tracking.</p>
 
         <a
             href="{{ url_for('create_batch') }}"
@@ -216,21 +173,23 @@ Batch Folders - Craylife
 
 </div>
 
-
 <style>
 
-/* =========================================
-   HEADER
-   ========================================= */
+.dashboard-container {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
 
 .batches-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-
-    gap: 15px;
-
-    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px;
+    border-radius: 12px;
 }
 
 .batches-header h2 {
@@ -239,570 +198,250 @@ Batch Folders - Craylife
 
 .batches-header p {
     margin: 0;
-
+    font-size: 13px;
     opacity: .72;
-
-    font-size: 13px;
 }
 
-
-/* =========================================
-   ADD NEW BATCH BUTTON
-   ========================================= */
-
-.add-batch-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    gap: 9px;
-
-    min-height: 44px;
-
-    padding: 11px 17px;
-
-    border: none;
-
-    border-radius: 12px;
-
-    color: #ffffff !important;
-
-    text-decoration: none !important;
-
-    font-size: 13px;
-
-    font-weight: 800;
-
-    background:
-        linear-gradient(
-            135deg,
-            #0f7f7a,
-            #159f91
-        );
-
-    box-shadow:
-        0 7px 16px
-        rgba(
-            15,
-            127,
-            122,
-            .20
-        );
-
-    transition:
-        transform .18s ease,
-        box-shadow .18s ease;
-}
-
-.add-batch-btn:hover {
-    color: #ffffff !important;
-
-    text-decoration: none !important;
-
-    transform: translateY(-2px);
-
-    box-shadow:
-        0 10px 21px
-        rgba(
-            15,
-            127,
-            122,
-            .28
-        );
-}
-
-
-/* =========================================
-   GRID
-   ========================================= */
-
-.batch-folder-grid {
-    display: grid;
-
-    grid-template-columns:
-        repeat(
-            auto-fit,
-            minmax(280px, 1fr)
-        );
-
-    gap: 16px;
-
-    margin-top: 18px;
-}
-
-
-/* =========================================
-   FOLDER CARD
-   ========================================= */
-
-.batch-folder-card {
-    display: flex;
-
-    flex-direction: column;
-
-    gap: 15px;
-
-    min-height: 255px;
-
-    padding: 20px;
-
-    border-radius: 18px;
-
-    position: relative;
-
-    transition:
-        transform .20s ease,
-        box-shadow .20s ease;
-}
-
-.batch-folder-card:hover {
-    transform: translateY(-3px);
-
-    box-shadow:
-        0 14px 28px
-        rgba(
-            0,
-            0,
-            0,
-            .14
-        );
-}
-
-
-/* =========================================
-   TOP ROW
-   ========================================= */
-
-.batch-folder-top {
-    display: flex;
-
-    align-items: flex-start;
-
-    justify-content: space-between;
-
-    gap: 12px;
-}
-
-
-/* =========================================
-   FOLDER ICON
-   ========================================= */
-
-.batch-folder-icon {
-    width: 55px;
-
-    height: 55px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    flex-shrink: 0;
-
-    border-radius: 15px;
-
-    background:
-        rgba(
-            15,
-            127,
-            122,
-            .10
-        );
-
-    color: #0f7f7a;
-
-    font-size: 27px;
-}
-
-
-/* =========================================
-   OPEN BUTTON
-   ========================================= */
-
-.batch-open-btn {
-    display: inline-flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 7px;
-
-    min-height: 39px;
-
+.add-batch-btn,
+.batch-open-btn,
+.batch-edit-btn,
+.batch-delete-btn {
+    min-height: 40px;
     padding: 9px 14px;
-
-    border: none;
-
-    border-radius: 11px;
-
-    color: #ffffff !important;
-
-    text-decoration: none !important;
-
+    border: 0;
+    border-radius: 12px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-family: inherit;
     font-size: 12px;
-
     font-weight: 800;
-
-    background:
-        linear-gradient(
-            135deg,
-            #0f7f7a,
-            #159f91
-        );
-
-    box-shadow:
-        0 6px 14px
-        rgba(
-            15,
-            127,
-            122,
-            .18
-        );
-
-    transition:
-        transform .18s ease,
-        box-shadow .18s ease;
-}
-
-.batch-open-btn:hover {
-    color: #ffffff !important;
-
     text-decoration: none !important;
-
-    transform: translateY(-2px);
-
-    box-shadow:
-        0 9px 18px
-        rgba(
-            15,
-            127,
-            122,
-            .27
-        );
+    cursor: pointer;
+    white-space: nowrap;
 }
 
+.add-batch-btn,
+.batch-open-btn {
+    color: #fff !important;
+    background: linear-gradient(135deg, #0f7f7a, #159f91);
+}
 
-/* =========================================
-   BATCH INFO
-   ========================================= */
+.batch-edit-btn {
+    color: #fff !important;
+    background: linear-gradient(135deg, #4a5b55, #64748b);
+}
 
-.batch-folder-info {
+.batch-delete-btn {
+    color: #fff !important;
+    background: linear-gradient(135deg, #775252, #5d4040);
+}
+
+.batch-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.batch-list-item {
+    width: 100%;
+    min-height: 86px;
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 12px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.batch-list-main {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.batch-list-icon {
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 127, 122, .09);
+    color: #0f7f7a;
+    font-size: 21px;
+}
+
+.batch-list-info {
+    min-width: 0;
     flex: 1;
 }
 
-.batch-folder-info h3 {
-    margin: 0 0 11px;
-
-    font-size: 18px;
-
-    font-weight: 800;
-}
-
-.batch-folder-meta {
+.batch-list-title-row {
     display: flex;
-
-    flex-direction: column;
-
-    gap: 8px;
-
-    font-size: 13px;
-
-    opacity: .82;
-}
-
-.batch-folder-meta span {
-    display: flex;
-
     align-items: center;
-
-    gap: 8px;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
-.batch-folder-meta i {
-    width: 16px;
+.batch-list-title-row h3 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
 
+.batch-list-status {
+    padding: 4px 8px;
+    border-radius: 12px;
+    background: rgba(15, 127, 122, .07);
+    border: 1px solid rgba(15, 127, 122, .10);
+    font-size: 10px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.batch-list-meta {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 7px;
+    font-size: 12px;
+    opacity: .78;
+}
+
+.batch-list-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.batch-list-meta i {
+    width: 14px;
     text-align: center;
-
     color: #0f7f7a;
 }
 
-
-/* =========================================
-   BOTTOM ACTION AREA
-   ========================================= */
-
-.batch-folder-actions {
+.batch-list-actions {
+    flex-shrink: 0;
     display: grid;
-
-    grid-template-columns:
-        minmax(0, 1fr)
-        minmax(0, 1fr);
-
-    gap: 9px;
-
-    width: 100%;
-
-    margin-top: auto;
-
-    padding-top: 5px;
+    grid-template-columns: repeat(3, minmax(82px, 1fr));
+    gap: 8px;
 }
 
-.batch-folder-actions form {
+.batch-list-actions form {
     width: 100%;
-
     margin: 0;
-
-    padding: 0;
 }
 
-
-/* =========================================
-   EDIT BUTTON
-   ========================================= */
-
-.batch-edit-btn {
+.batch-list-actions .batch-open-btn,
+.batch-list-actions .batch-edit-btn,
+.batch-list-actions .batch-delete-btn {
     width: 100%;
+}
 
-    min-height: 42px;
+.batches-quote {
+    margin-top: 16px;
+    padding: 16px 18px;
+    border-radius: 12px;
+    text-align: center;
+}
 
-    display: inline-flex;
+.batches-quote i {
+    color: #0f7f7a;
+    opacity: .7;
+    margin-bottom: 6px;
+}
 
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 8px;
-
-    box-sizing: border-box;
-
-    padding: 10px 14px;
-
-    border: none;
-
-    border-radius: 11px;
-
-    color: #ffffff !important;
-
-    text-decoration: none !important;
-
-    font-family: inherit;
-
+.batches-quote p {
+    margin: 0 0 5px;
     font-size: 12px;
-
-    font-weight: 800;
-
-    background:
-        linear-gradient(
-            135deg,
-            #4a5b55,
-            #64748b
-        );
-
-    box-shadow:
-        0 6px 14px
-        rgba(
-            74,
-            91,
-            85,
-            .18
-        );
-
-    cursor: pointer;
-
-    transition:
-        transform .18s ease,
-        box-shadow .18s ease;
+    opacity: .76;
 }
 
-.batch-edit-btn:hover {
-    color: #ffffff !important;
-
-    text-decoration: none !important;
-
-    transform: translateY(-2px);
-
-    box-shadow:
-        0 9px 18px
-        rgba(
-            74,
-            91,
-            85,
-            .27
-        );
+.batches-quote span {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    opacity: .46;
 }
-
-
-/* =========================================
-   DELETE BUTTON
-   ========================================= */
-
-.batch-delete-btn {
-    width: 100%;
-
-    min-height: 42px;
-
-    display: inline-flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 8px;
-
-    box-sizing: border-box;
-
-    padding: 10px 14px;
-
-    border: none;
-
-    border-radius: 11px;
-
-    color: #ffffff !important;
-
-    font-family: inherit;
-
-    font-size: 12px;
-
-    font-weight: 800;
-
-    background:
-        linear-gradient(
-            135deg,
-            #775252,
-            #5d4040
-        );
-
-    box-shadow:
-        0 6px 14px
-        rgba(
-            93,
-            64,
-            64,
-            .20
-        );
-
-    cursor: pointer;
-
-    transition:
-        transform .18s ease,
-        box-shadow .18s ease;
-}
-
-.batch-delete-btn:hover {
-    transform: translateY(-2px);
-
-    box-shadow:
-        0 9px 18px
-        rgba(
-            93,
-            64,
-            64,
-            .29
-        );
-}
-
-
-/* =========================================
-   EMPTY STATE
-   ========================================= */
 
 .empty-batches {
+    min-height: 260px;
+    margin-top: 16px;
+    padding: 34px 18px;
+    border-radius: 12px;
+    box-sizing: border-box;
     display: flex;
-
     flex-direction: column;
-
     align-items: center;
-
     justify-content: center;
-
-    margin-top: 18px;
-
-    padding: 50px 20px;
-
     text-align: center;
 }
 
 .empty-folder-icon {
-    width: 70px;
-
-    height: 70px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
+    width: 58px;
+    height: 58px;
     margin-bottom: 10px;
-
-    border-radius: 20px;
-
-    background:
-        rgba(
-            15,
-            127,
-            122,
-            .10
-        );
-
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 127, 122, .09);
     color: #0f7f7a;
-
-    font-size: 32px;
+    font-size: 25px;
 }
 
 .empty-batches h3 {
-    margin: 8px 0 5px;
+    margin: 4px 0;
 }
 
 .empty-batches p {
-    margin: 0 0 17px;
-
+    margin: 0 0 15px;
+    font-size: 13px;
     opacity: .72;
 }
 
+@media (max-width: 850px) {
+    .batch-list-item {
+        align-items: stretch;
+        flex-direction: column;
+    }
 
-/* =========================================
-   MOBILE
-   ========================================= */
+    .batch-list-actions {
+        width: 100%;
+    }
+}
 
-@media (max-width: 700px) {
-
+@media (max-width: 600px) {
     .batches-header {
         align-items: stretch;
+        flex-direction: column;
     }
 
     .batches-header .add-batch-btn {
         width: 100%;
     }
 
-    .batch-folder-grid {
+    .batch-list-actions {
         grid-template-columns: 1fr;
     }
 
-    .batch-folder-card {
-        min-height: auto;
+    .batch-list-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 5px;
     }
-
-}
-
-
-/* =========================================
-   VERY SMALL SCREEN
-   ========================================= */
-
-@media (max-width: 430px) {
-
-    .batch-folder-actions {
-        grid-template-columns: 1fr;
-    }
-
-    .batch-folder-top {
-        align-items: center;
-    }
-
 }
 
 </style>
