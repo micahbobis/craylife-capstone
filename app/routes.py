@@ -48,15 +48,48 @@ UTC_TZ = timezone.utc
 
 
 def to_ph_time(value):
-    """Convert a stored UTC datetime to Philippine local time for display."""
+    """Convert stored UTC datetime/string values to Philippine local time."""
     if value is None:
         return None
 
-    # Existing SQLAlchemy DateTime rows are naive UTC datetimes.
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC_TZ)
+    # Some migrated MySQL rows can arrive as strings. Normalize them first.
+    if isinstance(value, str):
+        raw = value.strip()
+        parsed = None
 
-    return value.astimezone(PH_TZ)
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        ):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+
+        value = parsed
+
+    # SQLAlchemy DateTime rows are normally naive UTC datetimes.
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC_TZ)
+        return value.astimezone(PH_TZ)
+
+    # Accept plain date-like objects safely.
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        value = datetime(value.year, value.month, value.day, tzinfo=UTC_TZ)
+        return value.astimezone(PH_TZ)
+
+    return None
 
 
 @app.template_filter("ph_time")
@@ -70,47 +103,44 @@ def ph_time_filter(value, fmt="%b %d, %Y %I:%M %p"):
 GROWTH_CHECK_INTERVAL_DAYS = 14
 
 
-def _days_between(start_dt, end_dt):
-    if not start_dt or not end_dt:
+def _normalize_datetime(value):
+    if value is None:
         return None
 
-    def normalize_datetime(value):
-        if isinstance(value, datetime):
-            return value
+    if isinstance(value, datetime):
+        return value
 
-        if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
-            return datetime(value.year, value.month, value.day)
+    if isinstance(value, str):
+        raw = value.strip()
 
-        if isinstance(value, str):
-            value = value.strip()
-
-            formats = [
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d %H:%M:%S.%f",
-                "%Y-%m-%d",
-                "%Y-%m-%dT%H:%M:%S",
-                "%Y-%m-%dT%H:%M:%S.%f",
-            ]
-
-            for fmt in formats:
-                try:
-                    return datetime.strptime(value, fmt)
-                except ValueError:
-                    continue
-
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        ):
             try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                return datetime.strptime(raw, fmt)
             except ValueError:
-                return None
+                continue
 
-        return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
 
-    start_dt = normalize_datetime(start_dt)
-    end_dt = normalize_datetime(end_dt)
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        return datetime(value.year, value.month, value.day)
 
+    return None
+
+
+def _days_between(start_dt, end_dt):
+    start_dt = _normalize_datetime(start_dt)
+    end_dt = _normalize_datetime(end_dt)
     if not start_dt or not end_dt:
         return None
-
     return max(0, (end_dt.date() - start_dt.date()).days)
 
 
@@ -127,9 +157,16 @@ def _get_official_growth_references(observations):
     if not observations:
         return []
 
+    def observation_sort_key(obs):
+        dt = _normalize_datetime(obs.created_at)
+        if dt is None:
+            return datetime.min
+        # Compare consistently even if an ISO string included timezone info.
+        return dt.replace(tzinfo=None)
+
     sorted_observations = sorted(
         observations,
-        key=lambda obs: obs.created_at or datetime.min
+        key=observation_sort_key
     )
 
     official_references = []
@@ -1637,12 +1674,11 @@ def home():
                 1
             )
 
+            last_verified_dt = _normalize_datetime(last_verified.created_at)
             next_verification_date = (
-                last_verified.created_at
-                + timedelta(
-                    days=GROWTH_CHECK_INTERVAL_DAYS
-                )
-                if last_verified.created_at
+                last_verified_dt
+                + timedelta(days=GROWTH_CHECK_INTERVAL_DAYS)
+                if last_verified_dt
                 else None
             )
 
@@ -2356,10 +2392,11 @@ def reports():
             or 0
         )
 
+        last_verified_dt = _normalize_datetime(last_verified.created_at)
         next_check_date = (
-            last_verified.created_at
+            last_verified_dt
             + timedelta(days=GROWTH_CHECK_INTERVAL_DAYS)
-            if last_verified.created_at
+            if last_verified_dt
             else None
         )
 
@@ -2369,7 +2406,7 @@ def reports():
 
             alert_key = (
                 f"growth_due_sent_{batch.id}_"
-                f"{last_verified.created_at.date() if last_verified.created_at else 'unknown'}"
+                f"{last_verified_dt.date() if last_verified_dt else 'unknown'}"
             )
 
             if not session.get(alert_key):
