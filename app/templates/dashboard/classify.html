@@ -306,12 +306,12 @@
                     </div>
 
                     <div>
-                        <span>Estimated Length</span>
+                        <span>Relative Size Index</span>
                         <strong>
-                            {% if result.estimated_length_cm and result.estimated_length_cm != 'Unknown' %}
-                                {{ result.estimated_length_cm }} cm
+                            {% if result.estimated_length_cm is not none %}
+                                {{ "%.3f"|format(result.estimated_length_cm|float) }}
                             {% else %}
-                                Unknown
+                                Unavailable
                             {% endif %}
                         </strong>
                     </div>

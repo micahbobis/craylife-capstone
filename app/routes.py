@@ -234,74 +234,317 @@ If you did not request this change, ignore this email.
 
 def estimate_length_and_growth_stage(img_bytes: bytes) -> dict:
     """
-    Estimate crayfish length (cm) from image using contours.
-    Needs calibration PX_PER_CM based on your camera setup.
+    Relative body-size estimator.
+
+    The returned numeric value is NOT centimeters.
+    It is the crayfish body length divided by the diameter
+    of the 38 cm black reference object.
+
+    Example:
+        0.52 = crayfish body is about 52% of reference diameter.
+
+    Growth stage is still handled by the trained ResNet model.
     """
-    debug_lines = []
+
     try:
         import cv2
         import numpy as np
 
-        PX_PER_CM = 35.0  
-
         arr = np.frombuffer(img_bytes, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
         if img is None:
-            return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": "cv2 decode failed"}
+            return {
+                "estimated_length_cm": None,
+                "debug": "Image decode failed"
+            }
 
         h, w = img.shape[:2]
-        max_w = 900
-        if w > max_w:
-            scale = max_w / float(w)
-            img = cv2.resize(img, (int(w * scale), int(h * scale)))
-            debug_lines.append(f"Resized scale={scale:.3f}")
+        image_area = float(w * h)
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (7, 7), 0)
+        # =====================================================
+        # RESIZE FOR CONSISTENT PROCESSING
+        # =====================================================
+        max_width = 1000
 
-        th = cv2.adaptiveThreshold(
-            blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 2
+        if w > max_width:
+            scale = max_width / float(w)
+
+            img = cv2.resize(
+                img,
+                (
+                    int(w * scale),
+                    int(h * scale)
+                )
+            )
+
+            h, w = img.shape[:2]
+            image_area = float(w * h)
+
+        # =====================================================
+        # 1. DETECT BLACK REFERENCE OBJECT
+        # =====================================================
+        gray = cv2.cvtColor(
+            img,
+            cv2.COLOR_BGR2GRAY
         )
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=2)
+        blur = cv2.GaussianBlur(
+            gray,
+            (9, 9),
+            2
+        )
 
-        cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not cnts:
-            return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": "No contours detected"}
+        _, dark_mask = cv2.threshold(
+            blur,
+            90,
+            255,
+            cv2.THRESH_BINARY_INV
+        )
 
-        c = max(cnts, key=cv2.contourArea)
-        area = cv2.contourArea(c)
-        debug_lines.append(f"largest_area={area:.1f}")
-        if area < 1500:
-            return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": "Contour too small"}
+        ref_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (11, 11)
+        )
 
-        rect = cv2.minAreaRect(c)
-        (_, _), (rw, rh), angle = rect
-        px_len = max(rw, rh)
-        debug_lines.append(f"px_len={px_len:.2f}, angle={angle:.1f}")
+        dark_mask = cv2.morphologyEx(
+            dark_mask,
+            cv2.MORPH_CLOSE,
+            ref_kernel,
+            iterations=2
+        )
 
-        length_cm = px_len / float(PX_PER_CM)
-        debug_lines.append(f"PX_PER_CM={PX_PER_CM:.2f} => length_cm={length_cm:.2f}")
+        contours, _ = cv2.findContours(
+            dark_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
 
-        if length_cm < 4.0:
-            stage = "Mid Juvenile"
-        elif length_cm < 7.0:
-            stage = "Juvenile"
-        elif length_cm < 10.0:
-            stage = "Sub Adult"
-        else:
-            stage = "Adult"
+        reference_candidates = []
+
+        for contour in contours:
+
+            area = cv2.contourArea(contour)
+
+            if area < image_area * 0.015:
+                continue
+
+            perimeter = cv2.arcLength(
+                contour,
+                True
+            )
+
+            if perimeter <= 0:
+                continue
+
+            circularity = (
+                4.0
+                * np.pi
+                * area
+                / (perimeter * perimeter)
+            )
+
+            (cx, cy), radius = cv2.minEnclosingCircle(
+                contour
+            )
+
+            diameter = radius * 2.0
+
+            if circularity < 0.45:
+                continue
+
+            if diameter < min(w, h) * 0.12:
+                continue
+
+            if diameter > min(w, h) * 0.70:
+                continue
+
+            reference_candidates.append({
+                "score": area * circularity,
+                "diameter": diameter,
+                "cx": cx,
+                "cy": cy,
+                "circularity": circularity
+            })
+
+        if not reference_candidates:
+            return {
+                "estimated_length_cm": None,
+                "debug": "Reference object not detected"
+            }
+
+        reference_candidates.sort(
+            key=lambda x: x["score"],
+            reverse=True
+        )
+
+        reference = reference_candidates[0]
+
+        reference_diameter_px = (
+            reference["diameter"]
+        )
+
+        # =====================================================
+        # 2. CRAYFISH BODY MASK
+        # =====================================================
+        hsv = cv2.cvtColor(
+            img,
+            cv2.COLOR_BGR2HSV
+        )
+
+        saturation = hsv[:, :, 1]
+
+        # Crayfish is more saturated than pale background.
+        _, body_mask = cv2.threshold(
+            saturation,
+            45,
+            255,
+            cv2.THRESH_BINARY
+        )
+
+        # Remove black reference area.
+        cv2.circle(
+            body_mask,
+            (
+                int(reference["cx"]),
+                int(reference["cy"])
+            ),
+            int(reference_diameter_px * 0.60),
+            0,
+            -1
+        )
+
+        # =====================================================
+        # REMOVE THIN ANTENNAE / LEGS
+        # =====================================================
+        # Opening removes thin appendages and keeps thicker body.
+        body_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (11, 11)
+        )
+
+        body_mask = cv2.morphologyEx(
+            body_mask,
+            cv2.MORPH_OPEN,
+            body_kernel,
+            iterations=2
+        )
+
+        body_mask = cv2.morphologyEx(
+            body_mask,
+            cv2.MORPH_CLOSE,
+            body_kernel,
+            iterations=2
+        )
+
+        # =====================================================
+        # 3. FIND MAIN BODY
+        # =====================================================
+        body_contours, _ = cv2.findContours(
+            body_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        candidates = []
+
+        for contour in body_contours:
+
+            area = cv2.contourArea(contour)
+
+            if area < image_area * 0.003:
+                continue
+
+            if area > image_area * 0.30:
+                continue
+
+            rect = cv2.minAreaRect(
+                contour
+            )
+
+            (_, _), (rw, rh), angle = rect
+
+            long_side = max(rw, rh)
+            short_side = min(rw, rh)
+
+            if long_side <= 0 or short_side <= 0:
+                continue
+
+            aspect_ratio = (
+                long_side / short_side
+            )
+
+            if aspect_ratio < 1.20:
+                continue
+
+            candidates.append({
+                "area": area,
+                "long_side": long_side,
+                "aspect_ratio": aspect_ratio
+            })
+
+        if not candidates:
+            return {
+                "estimated_length_cm": None,
+                "debug": (
+                    "Reference detected but main "
+                    "crayfish body was not isolated"
+                )
+            }
+
+        candidates.sort(
+            key=lambda x:
+                x["area"]
+                * min(x["aspect_ratio"], 4.0),
+            reverse=True
+        )
+
+        best = candidates[0]
+
+        body_length_px = (
+            best["long_side"]
+        )
+
+        # =====================================================
+        # 4. RELATIVE SIZE INDEX
+        # =====================================================
+        relative_size = (
+            body_length_px
+            / reference_diameter_px
+        )
+
+        if relative_size <= 0 or relative_size > 2.0:
+            return {
+                "estimated_length_cm": None,
+                "debug": (
+                    f"Rejected relative size: "
+                    f"{relative_size:.3f}"
+                )
+            }
 
         return {
-            "estimated_length_cm": f"{length_cm:.1f} cm",
-            "growth_stage": stage,
-            "debug": "\n".join(debug_lines),
+            # Keep this key temporarily because your existing
+            # DB/route already expects it.
+            "estimated_length_cm": round(
+                float(relative_size),
+                3
+            ),
+
+            "debug": (
+                f"reference_px={reference_diameter_px:.2f}\n"
+                f"reference_circularity="
+                f"{reference['circularity']:.3f}\n"
+                f"body_px={body_length_px:.2f}\n"
+                f"aspect_ratio={best['aspect_ratio']:.2f}\n"
+                f"relative_size={relative_size:.3f}"
+            )
         }
 
-    except Exception as e:
-        return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": f"Exception: {e}"}
-
+    except Exception as error:
+        return {
+            "estimated_length_cm": None,
+            "debug": f"Exception: {error}"
+        }
 # =========================================================
 # UNDERWATER TEMPERATURE STATUS
 # Adjust these thresholds later if your crayfish species
