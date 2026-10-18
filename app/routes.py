@@ -48,59 +48,21 @@ UTC_TZ = timezone.utc
 
 
 def to_ph_time(value):
-    """Convert stored UTC datetime/string values to Philippine local time."""
+    """Convert a stored UTC datetime to Philippine local time for display."""
     if value is None:
         return None
 
-    # Some migrated MySQL rows can arrive as strings. Normalize them first.
-    if isinstance(value, str):
-        raw = value.strip()
-        parsed = None
+    # Existing SQLAlchemy DateTime rows are naive UTC datetimes.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC_TZ)
 
-        for fmt in (
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%d",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S.%f",
-        ):
-            try:
-                parsed = datetime.strptime(raw, fmt)
-                break
-            except ValueError:
-                continue
-
-        if parsed is None:
-            try:
-                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            except ValueError:
-                return None
-
-        value = parsed
-
-    # SQLAlchemy DateTime rows are normally naive UTC datetimes.
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC_TZ)
-        return value.astimezone(PH_TZ)
-
-    # Accept plain date-like objects safely.
-    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
-        value = datetime(value.year, value.month, value.day, tzinfo=UTC_TZ)
-        return value.astimezone(PH_TZ)
-
-    return None
-
-
-def _format_ph_time(value, fmt="%b %d, %Y %I:%M %p", fallback="—"):
-    """Safely format datetime/date/string values in Philippine time."""
-    local_time = to_ph_time(value)
-    return local_time.strftime(fmt) if local_time else fallback
+    return value.astimezone(PH_TZ)
 
 
 @app.template_filter("ph_time")
 def ph_time_filter(value, fmt="%b %d, %Y %I:%M %p"):
-    return _format_ph_time(value, fmt, "—")
+    local_time = to_ph_time(value)
+    return local_time.strftime(fmt) if local_time else "—"
 
 # =========================================================
 # 14-DAY GROWTH TRACKING
@@ -111,33 +73,16 @@ GROWTH_CHECK_INTERVAL_DAYS = 14
 def _normalize_datetime(value):
     if value is None:
         return None
-
     if isinstance(value, datetime):
         return value
-
     if isinstance(value, str):
-        raw = value.strip()
-
-        for fmt in (
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%d",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S.%f",
-        ):
-            try:
-                return datetime.strptime(raw, fmt)
-            except ValueError:
-                continue
-
+        value = value.strip()
         try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
-
     if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
         return datetime(value.year, value.month, value.day)
-
     return None
 
 
@@ -162,16 +107,9 @@ def _get_official_growth_references(observations):
     if not observations:
         return []
 
-    def observation_sort_key(obs):
-        dt = _normalize_datetime(obs.created_at)
-        if dt is None:
-            return datetime.min
-        # Compare consistently even if an ISO string included timezone info.
-        return dt.replace(tzinfo=None)
-
     sorted_observations = sorted(
         observations,
-        key=observation_sort_key
+        key=lambda obs: obs.created_at or datetime.min
     )
 
     official_references = []
@@ -234,317 +172,74 @@ If you did not request this change, ignore this email.
 
 def estimate_length_and_growth_stage(img_bytes: bytes) -> dict:
     """
-    Relative body-size estimator.
-
-    The returned numeric value is NOT centimeters.
-    It is the crayfish body length divided by the diameter
-    of the 38 cm black reference object.
-
-    Example:
-        0.52 = crayfish body is about 52% of reference diameter.
-
-    Growth stage is still handled by the trained ResNet model.
+    Estimate crayfish length (cm) from image using contours.
+    Needs calibration PX_PER_CM based on your camera setup.
     """
-
+    debug_lines = []
     try:
         import cv2
         import numpy as np
 
+        PX_PER_CM = 35.0  
+
         arr = np.frombuffer(img_bytes, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-
         if img is None:
-            return {
-                "estimated_length_cm": None,
-                "debug": "Image decode failed"
-            }
+            return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": "cv2 decode failed"}
 
         h, w = img.shape[:2]
-        image_area = float(w * h)
+        max_w = 900
+        if w > max_w:
+            scale = max_w / float(w)
+            img = cv2.resize(img, (int(w * scale), int(h * scale)))
+            debug_lines.append(f"Resized scale={scale:.3f}")
 
-        # =====================================================
-        # RESIZE FOR CONSISTENT PROCESSING
-        # =====================================================
-        max_width = 1000
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (7, 7), 0)
 
-        if w > max_width:
-            scale = max_width / float(w)
-
-            img = cv2.resize(
-                img,
-                (
-                    int(w * scale),
-                    int(h * scale)
-                )
-            )
-
-            h, w = img.shape[:2]
-            image_area = float(w * h)
-
-        # =====================================================
-        # 1. DETECT BLACK REFERENCE OBJECT
-        # =====================================================
-        gray = cv2.cvtColor(
-            img,
-            cv2.COLOR_BGR2GRAY
+        th = cv2.adaptiveThreshold(
+            blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 2
         )
 
-        blur = cv2.GaussianBlur(
-            gray,
-            (9, 9),
-            2
-        )
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-        _, dark_mask = cv2.threshold(
-            blur,
-            90,
-            255,
-            cv2.THRESH_BINARY_INV
-        )
+        cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": "No contours detected"}
 
-        ref_kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (11, 11)
-        )
+        c = max(cnts, key=cv2.contourArea)
+        area = cv2.contourArea(c)
+        debug_lines.append(f"largest_area={area:.1f}")
+        if area < 1500:
+            return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": "Contour too small"}
 
-        dark_mask = cv2.morphologyEx(
-            dark_mask,
-            cv2.MORPH_CLOSE,
-            ref_kernel,
-            iterations=2
-        )
+        rect = cv2.minAreaRect(c)
+        (_, _), (rw, rh), angle = rect
+        px_len = max(rw, rh)
+        debug_lines.append(f"px_len={px_len:.2f}, angle={angle:.1f}")
 
-        contours, _ = cv2.findContours(
-            dark_mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
+        length_cm = px_len / float(PX_PER_CM)
+        debug_lines.append(f"PX_PER_CM={PX_PER_CM:.2f} => length_cm={length_cm:.2f}")
 
-        reference_candidates = []
-
-        for contour in contours:
-
-            area = cv2.contourArea(contour)
-
-            if area < image_area * 0.015:
-                continue
-
-            perimeter = cv2.arcLength(
-                contour,
-                True
-            )
-
-            if perimeter <= 0:
-                continue
-
-            circularity = (
-                4.0
-                * np.pi
-                * area
-                / (perimeter * perimeter)
-            )
-
-            (cx, cy), radius = cv2.minEnclosingCircle(
-                contour
-            )
-
-            diameter = radius * 2.0
-
-            if circularity < 0.45:
-                continue
-
-            if diameter < min(w, h) * 0.12:
-                continue
-
-            if diameter > min(w, h) * 0.70:
-                continue
-
-            reference_candidates.append({
-                "score": area * circularity,
-                "diameter": diameter,
-                "cx": cx,
-                "cy": cy,
-                "circularity": circularity
-            })
-
-        if not reference_candidates:
-            return {
-                "estimated_length_cm": None,
-                "debug": "Reference object not detected"
-            }
-
-        reference_candidates.sort(
-            key=lambda x: x["score"],
-            reverse=True
-        )
-
-        reference = reference_candidates[0]
-
-        reference_diameter_px = (
-            reference["diameter"]
-        )
-
-        # =====================================================
-        # 2. CRAYFISH BODY MASK
-        # =====================================================
-        hsv = cv2.cvtColor(
-            img,
-            cv2.COLOR_BGR2HSV
-        )
-
-        saturation = hsv[:, :, 1]
-
-        # Crayfish is more saturated than pale background.
-        _, body_mask = cv2.threshold(
-            saturation,
-            45,
-            255,
-            cv2.THRESH_BINARY
-        )
-
-        # Remove black reference area.
-        cv2.circle(
-            body_mask,
-            (
-                int(reference["cx"]),
-                int(reference["cy"])
-            ),
-            int(reference_diameter_px * 0.60),
-            0,
-            -1
-        )
-
-        # =====================================================
-        # REMOVE THIN ANTENNAE / LEGS
-        # =====================================================
-        # Opening removes thin appendages and keeps thicker body.
-        body_kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (11, 11)
-        )
-
-        body_mask = cv2.morphologyEx(
-            body_mask,
-            cv2.MORPH_OPEN,
-            body_kernel,
-            iterations=2
-        )
-
-        body_mask = cv2.morphologyEx(
-            body_mask,
-            cv2.MORPH_CLOSE,
-            body_kernel,
-            iterations=2
-        )
-
-        # =====================================================
-        # 3. FIND MAIN BODY
-        # =====================================================
-        body_contours, _ = cv2.findContours(
-            body_mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        candidates = []
-
-        for contour in body_contours:
-
-            area = cv2.contourArea(contour)
-
-            if area < image_area * 0.003:
-                continue
-
-            if area > image_area * 0.30:
-                continue
-
-            rect = cv2.minAreaRect(
-                contour
-            )
-
-            (_, _), (rw, rh), angle = rect
-
-            long_side = max(rw, rh)
-            short_side = min(rw, rh)
-
-            if long_side <= 0 or short_side <= 0:
-                continue
-
-            aspect_ratio = (
-                long_side / short_side
-            )
-
-            if aspect_ratio < 1.20:
-                continue
-
-            candidates.append({
-                "area": area,
-                "long_side": long_side,
-                "aspect_ratio": aspect_ratio
-            })
-
-        if not candidates:
-            return {
-                "estimated_length_cm": None,
-                "debug": (
-                    "Reference detected but main "
-                    "crayfish body was not isolated"
-                )
-            }
-
-        candidates.sort(
-            key=lambda x:
-                x["area"]
-                * min(x["aspect_ratio"], 4.0),
-            reverse=True
-        )
-
-        best = candidates[0]
-
-        body_length_px = (
-            best["long_side"]
-        )
-
-        # =====================================================
-        # 4. RELATIVE SIZE INDEX
-        # =====================================================
-        relative_size = (
-            body_length_px
-            / reference_diameter_px
-        )
-
-        if relative_size <= 0 or relative_size > 2.0:
-            return {
-                "estimated_length_cm": None,
-                "debug": (
-                    f"Rejected relative size: "
-                    f"{relative_size:.3f}"
-                )
-            }
+        if length_cm < 4.0:
+            stage = "Mid Juvenile"
+        elif length_cm < 7.0:
+            stage = "Juvenile"
+        elif length_cm < 10.0:
+            stage = "Sub Adult"
+        else:
+            stage = "Adult"
 
         return {
-            # Keep this key temporarily because your existing
-            # DB/route already expects it.
-            "estimated_length_cm": round(
-                float(relative_size),
-                3
-            ),
-
-            "debug": (
-                f"reference_px={reference_diameter_px:.2f}\n"
-                f"reference_circularity="
-                f"{reference['circularity']:.3f}\n"
-                f"body_px={body_length_px:.2f}\n"
-                f"aspect_ratio={best['aspect_ratio']:.2f}\n"
-                f"relative_size={relative_size:.3f}"
-            )
+            "estimated_length_cm": f"{length_cm:.1f} cm",
+            "growth_stage": stage,
+            "debug": "\n".join(debug_lines),
         }
 
-    except Exception as error:
-        return {
-            "estimated_length_cm": None,
-            "debug": f"Exception: {error}"
-        }
+    except Exception as e:
+        return {"estimated_length_cm": "Unknown", "growth_stage": "Unknown", "debug": f"Exception: {e}"}
+
 # =========================================================
 # UNDERWATER TEMPERATURE STATUS
 # Adjust these thresholds later if your crayfish species
@@ -1094,7 +789,7 @@ Latest Estimated Length: {latest_length}
 Growth Status: {status}
 
 Next Check:
-{_format_ph_time(next_check_date, '%B %d, %Y', 'Not available')}
+{to_ph_time(next_check_date).strftime('%B %d, %Y') if next_check_date else 'Not available'}
 
 NEXT ACTION
 Upload a new batch observation when the scheduled growth verification
@@ -1818,11 +1513,12 @@ def home():
             }
 
             for log in reversed(growth_logs):
-                label = _format_ph_time(
-                    log.created_at,
-                    "%b %d %I:%M %p",
-                    "Unknown"
-                )
+                if log.created_at:
+                    label = to_ph_time(log.created_at).strftime(
+                        "%b %d %I:%M %p"
+                    )
+                else:
+                    label = "Unknown"
 
                 growth_chart_labels.append(
                     label
@@ -2031,11 +1727,9 @@ def home():
 
             for ref in official_references:
                 chart_labels.append(
-                    _format_ph_time(
-                        ref.created_at,
-                        '%b %d',
-                        'Unknown'
-                    )
+                    to_ph_time(ref.created_at).strftime('%b %d')
+                    if ref.created_at
+                    else 'Unknown'
                 )
 
                 chart_actual.append(
@@ -2463,54 +2157,228 @@ import io
 @app.route('/download-report')
 @login_required
 def download_report():
+    """Export real saved records and growth charts; never rewrite observation timestamps."""
+    from flask import abort
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as PDFImage, KeepTogether
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER
+    from xml.sax.saxutils import escape
+    from datetime import date, time
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
 
-    user_id = session.get('user_id')
+    report_type = request.args.get('type', 'all').lower()
+    if report_type not in ('all', 'sensors', 'growth', 'classification', 'individual'):
+        abort(400, description='Invalid report type')
+    try:
+        start = date.fromisoformat(request.args['from']) if request.args.get('from') else None
+        end = date.fromisoformat(request.args['to']) if request.args.get('to') else None
+    except ValueError:
+        abort(400, description='Invalid date format')
+    if start and end and start > end:
+        abort(400, description='From date cannot be after To date')
 
-    batches = Batch.query.filter_by(user_id=user_id).all()
-    activities = ActivityLog.query.filter_by(user_id=user_id).all()
+    user_id = session['user_id']
+    batches = Batch.query.filter_by(user_id=user_id).order_by(Batch.id).all()
+    batch_ids = [b.id for b in batches]
+    logs_q = ClassificationLog.query.filter(ClassificationLog.user_id == user_id)
+    if start:
+        logs_q = logs_q.filter(ClassificationLog.created_at >= datetime.combine(start, time.min))
+    if end:
+        logs_q = logs_q.filter(ClassificationLog.created_at < datetime.combine(end + timedelta(days=1), time.min))
+    if report_type == 'all':
+        logs = (
+            logs_q.filter(ClassificationLog.batch_id.is_(None))
+            .order_by(ClassificationLog.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        logs.reverse()
+    else:
+        logs = logs_q.order_by(ClassificationLog.created_at).all()
+
+    alerts_q = MonitoringAlert.query
+    if start:
+        alerts_q = alerts_q.filter(MonitoringAlert.created_at >= datetime.combine(start, time.min))
+    if end:
+        alerts_q = alerts_q.filter(MonitoringAlert.created_at < datetime.combine(end + timedelta(days=1), time.min))
+    alerts = alerts_q.order_by(MonitoringAlert.created_at.desc()).limit(250).all()
+
+    # Sensor readings are global in the current schema (no user_id).
+    # Only include them when the database actually contains timestamped readings.
+    from app.models import SensorReading, MonitoringRecord
+    sensor_q = SensorReading.query
+    if start:
+        sensor_q = sensor_q.filter(SensorReading.recorded_at >= datetime.combine(start, time.min))
+    if end:
+        sensor_q = sensor_q.filter(SensorReading.recorded_at < datetime.combine(end + timedelta(days=1), time.min))
+    if report_type == 'all':
+        readings = (
+            sensor_q.order_by(SensorReading.recorded_at.desc())
+            .limit(5)
+            .all()
+        )
+    else:
+        readings = (
+            sensor_q.order_by(SensorReading.recorded_at.desc())
+            .limit(2000)
+            .all()
+        )
+
+    readings.reverse()
+
+    def date_text(value):
+        local = to_ph_time(value)
+        return local.strftime('%b %d, %Y %I:%M %p') if local else 'N/A'
+
+    def safe(value):
+        return escape(str(value if value is not None else 'N/A'))
+
+    def number(value):
+        return f'{value:.2f}' if isinstance(value, (int, float)) else 'N/A'
 
     buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=42, leftMargin=42, topMargin=45, bottomMargin=45)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='CrayTitle', parent=styles['Title'], textColor=colors.HexColor('#17665f'), fontSize=19, spaceAfter=10))
+    styles.add(ParagraphStyle(name='CraySection', parent=styles['Heading2'], textColor=colors.HexColor('#17665f'), spaceBefore=15, spaceAfter=7))
+    styles.add(ParagraphStyle(name='CrayCell', parent=styles['BodyText'], fontSize=7.5, leading=10))
+    story = [Paragraph('CRAYLIFE | '+{'all':'Complete Report','sensors':'Sensor Monitoring Report','growth':'Batch Growth Report','classification':'Classification Report','individual':'Individual Growth Report'}[report_type], styles['CrayTitle']),
+             Paragraph(f'Report period: {start or "All available"} to {end or "Latest"} | Generated: {date_text(datetime.utcnow())}', styles['Normal']), Spacer(1, 10)]
 
-    pdf.setFont("Helvetica", 14)
-    pdf.drawString(200, 750, "Craylife System Report")
+    def section(title):
+        story.append(Paragraph(title, styles['CraySection']))
 
-    y = 720
+    def paragraph(text):
+        story.append(Paragraph(text, styles['Normal']))
 
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(50, y, "Batch Summary")
-    y -= 20
+    def table(headers, rows, widths=None):
+        if not rows:
+            paragraph('No saved records for this period.')
+            return
+        cells = [[Paragraph(safe(v), styles['CrayCell']) for v in headers]]
+        cells += [[Paragraph(safe(v), styles['CrayCell']) for v in row] for row in rows]
+        t = Table(cells, colWidths=widths, repeatRows=1, hAlign='LEFT')
+        t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dceeea')),
+                               ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f8f7')]),
+                               ('GRID',(0,0),(-1,-1),0.25,colors.HexColor('#d3dedb')),
+                               ('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+        story.append(t)
 
-    for batch in batches:
-        pdf.drawString(50, y, f"Batch: {batch.batch_name} | Quantity: {batch.quantity}")
-        y -= 20
+    def plot_series(labels, series, title, ylabel):
+        if not labels or not any(any(v is not None for v in vals) for _, vals in series):
+            return
+        fig, ax = plt.subplots(figsize=(7.1, 2.8))
+        x = list(range(len(labels)))
+        for name, values in series:
+            ax.plot(x, [float(v) if v is not None else float('nan') for v in values], marker='o', label=name)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=7)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(alpha=.25)
+        if len(series)>1: ax.legend(fontsize=7)
+        fig.tight_layout()
+        img = io.BytesIO()
+        fig.savefig(img, format='png', dpi=130)
+        plt.close(fig)
+        img.seek(0)
+        story.append(PDFImage(img, width=7.0*inch, height=2.76*inch))
 
-    y -= 20
-    pdf.drawString(50, y, "Recent Activities")
-    y -= 20
+    if report_type == 'classification':
+        section('Classification History')
+        table(['Date (PH)','Batch / Solo','Gender','Growth Stage','Gender Conf.','Growth Conf.'],
+              [[date_text(l.created_at), next((b.batch_name for b in batches if b.id==l.batch_id), 'Solo'),
+                l.gender, l.growth, number(l.gender_confidence), number(l.growth_confidence)] for l in logs],
+              [105,88,70,87,73,73])
+        solo = [l for l in logs if l.batch_id is None and l.estimated_length_cm is not None]
+        plot_series([to_ph_time(l.created_at).strftime('%b %d') for l in solo],
+                    [('Recorded size index',[l.estimated_length_cm for l in solo])],
+                    'Individual Classification Size Trend','Recorded index (not calibrated cm)')
 
-    for act in activities[:10]:
-        local_act_time = to_ph_time(act.timestamp)
-        local_act_text = local_act_time.strftime("%Y-%m-%d %I:%M %p") if local_act_time else "Unknown"
-        pdf.drawString(50, y, f"{act.action} ({local_act_text})")
-        y -= 20
+    if report_type in ('all', 'individual'):
+        section('Individual Growth Monitoring')
+        solo_logs = [l for l in logs if l.batch_id is None]
 
-        if y < 100:
-            pdf.showPage()
-            y = 750
+    if report_type == 'all':
+        solo_logs = solo_logs[-5:]
+        if solo_logs:
+            latest_solo = solo_logs[-1]
+            paragraph('Latest classification: '+safe(str(latest_solo.growth).replace('_', ' ').title())+
+                      ' | Confidence: '+number(latest_solo.growth_confidence)+'% | Checked: '+date_text(latest_solo.created_at))
+        table(['Date (PH)','Growth Stage','Confidence (%)'],
+              [[date_text(l.created_at),str(l.growth).replace('_',' ').title(),number(l.growth_confidence)] for l in reversed(solo_logs)],
+              [185,180,131])
+        stage_index = {'mid_juvenile':1,'juvenile':2,'mid_adult':3,'adult':4}
+        trend = [(l,stage_index.get(str(l.growth or '').lower().replace(' ','_'))) for l in solo_logs]
+        trend = [(l,v) for l,v in trend if v is not None]
+        if trend:
+            plot_series([to_ph_time(l.created_at).strftime('%b %d, %Y') for l,v in trend],
+                        [('Growth stage (1=Mid Juvenile, 2=Juvenile, 3=Mid Adult, 4=Adult)',[v for l,v in trend])],
+                        'Individual Growth Stage Trend','Stage (1-4)')
 
-    pdf.save()
+    if report_type in ('all','growth'):
+        section('Batch Growth Monitoring')
+        if not batches: paragraph('No batches available.')
+        for batch in batches:
+            # Include previous records when calculating verified baseline; only display selected dates.
+            all_obs = ClassificationLog.query.filter_by(user_id=user_id, batch_id=batch.id).order_by(ClassificationLog.created_at).all()
+            official = _get_official_growth_references(all_obs)
+            shown = [l for l in all_obs if (not start or l.created_at.date() >= start) and (not end or l.created_at.date() <= end)]
+            section(safe(batch.batch_name))
+            if official:
+                latest = official[-1].created_at
+                next_due = latest + timedelta(days=14)
+                paragraph('Latest verified: '+date_text(latest)+' | Next verification due: '+date_text(next_due)+' | Verified points: '+str(len(official)))
+            table(['Observation date (PH)','Stage','Confidence','Size index','Verification'],
+                  [[date_text(l.created_at),l.growth,number(l.growth_confidence),number(l.estimated_length_cm),
+                    'Verified' if l.id in {o.id for o in official} else 'Provisional'] for l in shown],
+                  [125,110,85,80,96])
+            selected = [l for l in official if (not start or l.created_at.date()>=start) and (not end or l.created_at.date()<=end)]
+            plot_series([to_ph_time(l.created_at).strftime('%b %d') for l in selected],
+                        [('Verified observation',[l.estimated_length_cm for l in selected])],
+                        batch.batch_name+' - verified growth trend','Recorded index (not calibrated cm)')
+        paragraph('Verified observations follow the existing 14-day rule. Dates shown are actual stored observation timestamps; projected values are not presented as measurements.')
 
+    if report_type in ('all','sensors'):
+        section('Sensor Monitoring')
+        if not start and not end:
+            live = get_live_sensor_data()
+            paragraph('Latest live sensor snapshot (not historical): '+safe(live))
+        table(['Recorded (PH)','pH','Water level','Temperature'],
+              [[date_text(r.recorded_at),number(r.ph_value),number(r.water_level),number(r.temperature)] for r in readings[-100:]],
+              [155,105,110,126])
+        if readings and report_type == 'sensors':
+            labels = [to_ph_time(r.recorded_at).strftime('%m/%d %H:%M') for r in readings[-20:]]
+            plot_series(labels,[('pH',[r.ph_value for r in readings[-20:]])],'Saved pH History','pH')
+            plot_series(labels,[('Temperature',[r.temperature for r in readings[-20:]])],'Saved Temperature History','Temperature')
+            plot_series(labels,[('Water level',[r.water_level for r in readings[-20:]])],'Saved Water Level History','Water level')
+        else:
+            paragraph('No timestamped sensor readings saved for this date range; browser-only graph history cannot be reconstructed.')
+        if report_type == 'sensors':
+            section('Sensor Alerts')
+            table(['Date (PH)','Sensor','Value','Message'],
+              [[date_text(a.created_at),a.sensor_type,number(a.value),a.message] for a in alerts],
+              [118,88,68,222])
+
+    def footer(canv, document):
+        canv.saveState()
+        canv.setFont('Helvetica',8)
+        canv.setFillColor(colors.grey)
+        canv.drawString(42,25,'CRAYLIFE - System-generated report')
+        canv.drawRightString(letter[0]-42,25,f'Page {document.page}')
+        canv.restoreState()
+
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
     buffer.seek(0)
+    return send_file(buffer, as_attachment=True,
+                     download_name=f'craylife_{report_type}_{datetime.utcnow():%Y%m%d}.pdf',
+                     mimetype='application/pdf')
 
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name="craylife_report.pdf",
-        mimetype="application/pdf"
-    )
-    
-    
+
 @app.route('/reports')
 @login_required
 def reports():

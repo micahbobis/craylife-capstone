@@ -23,6 +23,7 @@
             </p>
         </div>
 
+        <a href="{{ url_for('download_report', type='all') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Complete PDF</a>
         <div class="dashboard-hero-badge">
             <i class="fa-solid fa-circle-dot"></i>
             Live Monitoring
@@ -30,7 +31,7 @@
     </div>
 
     <div class="panel sensor-panel glow water-monitoring-panel">
-        <h2><i class="fa-solid fa-thermometer-half"></i> Water Quality Monitoring</h2>
+        <div class="home-pdf-heading"><h2><i class="fa-solid fa-thermometer-half"></i> Water Quality Monitoring</h2><a href="{{ url_for('download_report', type='sensors') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Sensor PDF</a></div>
 
         <p id="last-updated" style="margin-top:6px; opacity:.85;">
             Last updated: <span id="last-updated-seconds">—</span>
@@ -173,10 +174,10 @@
                 </p>
             </div>
 
-            <a href="{{ url_for('classify') }}" class="btn btn-primary compact-classify-btn">
+            <div class="home-pdf-heading-actions"><a href="{{ url_for('download_report', type='individual') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Individual PDF</a><a href="{{ url_for('classify') }}" class="btn btn-primary compact-classify-btn">
                 <i class="fa-solid fa-camera"></i>
                 New Classification
-            </a>
+            </a></div>
         </div>
 
         {% if latest_growth %}
@@ -199,14 +200,14 @@
                     <div>
                         <span>Last Checked</span>
                         <strong>
-                            {{ latest_growth.created_at|ph_time('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
+                            {{ latest_growth.created_at.strftime('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
                         </strong>
                     </div>
 
                     <div>
                         <span>Time</span>
                         <strong>
-                            {{ latest_growth.created_at|ph_time('%I:%M %p') if latest_growth.created_at else '—' }}
+                            {{ latest_growth.created_at.strftime('%I:%M %p') if latest_growth.created_at else '—' }}
                         </strong>
                     </div>
                 </div>
@@ -238,7 +239,7 @@
                         </div>
 
                         <time>
-                            {{ log.created_at|ph_time('%b %d') if log.created_at else '—' }}
+                            {{ log.created_at.strftime('%b %d') if log.created_at else '—' }}
                         </time>
                     </div>
                     {% endfor %}
@@ -291,6 +292,7 @@
 
         </div>
 
+        <div class="home-pdf-batch"><a href="{{ url_for('download_report', type='growth') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Batch Growth PDF</a></div>
         {% if batch_growth_summaries %}
 
         <div class="live-growth-grid">
@@ -361,7 +363,7 @@
 
                         {% if item.next_verification_date %}
                             <strong>
-                                {{ item.next_verification_date|ph_time('%b %d, %Y') }}
+                                {{ item.next_verification_date.strftime('%b %d, %Y') }}
                             </strong>
                         {% endif %}
                     </div>
@@ -381,7 +383,7 @@
 
                         <small>
                             {% if item.last_verified_date %}
-                                {{ item.last_verified_date|ph_time('%b %d, %Y') }}
+                                {{ item.last_verified_date.strftime('%b %d, %Y') }}
                             {% else %}
                                 No verified date
                             {% endif %}
@@ -3272,6 +3274,12 @@ updateSensorConnection(phConnectionEl, phSensorStatus);
     }
   }
 
+  .home-pdf-btn {display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:11px;background:linear-gradient(135deg,#0f7f7a,#159f91);color:white!important;text-decoration:none!important;font-size:12px;font-weight:800;white-space:nowrap;}
+  .home-pdf-btn:hover {filter:brightness(1.08);}
+  .home-pdf-heading {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .home-pdf-heading-actions {display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .home-pdf-batch {display:flex;justify-content:flex-end;margin:-6px 0 16px;}
+  @media(max-width:720px){.home-pdf-btn{white-space:normal}.home-pdf-batch{justify-content:flex-start}}
 </style>
 
 {% endblock %}
