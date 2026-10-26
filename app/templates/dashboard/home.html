@@ -23,15 +23,14 @@
             </p>
         </div>
 
-        <a href="{{ url_for('download_report', type='all') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Complete PDF</a>
         <div class="dashboard-hero-badge">
             <i class="fa-solid fa-circle-dot"></i>
             Live Monitoring
         </div>
     </div>
 
-    <div class="panel sensor-panel glow water-monitoring-panel">
-        <div class="home-pdf-heading"><h2><i class="fa-solid fa-thermometer-half"></i> Water Quality Monitoring</h2><a href="{{ url_for('download_report', type='sensors') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Sensor PDF</a></div>
+    <div class="panel sensor-panel glow">
+        <h2><i class="fa-solid fa-thermometer-half"></i> Water Quality Monitoring</h2>
 
         <p id="last-updated" style="margin-top:6px; opacity:.85;">
             Last updated: <span id="last-updated-seconds">—</span>
@@ -95,13 +94,12 @@
                 <div class="sensor-value big-value" id="sensorStatus">Not connected</div>
                 <div class="sensor-sub strong-sub">Arduino connection state</div>
             </div>
+        </div>
 
+        <div class="sensor-cards sensor-cards-pretty water-level-strip">
             <div class="sensor-card sensor-card-pretty level-card" data-sensor="Water Level">
                 <div class="sensor-topline">
-                    <div class="sensor-title">
-                        <i class="fa-solid fa-water"></i>
-                        Water Level
-                    </div>
+                    <div class="sensor-title"><i class="fa-solid fa-water"></i> Water Level</div>
                     <div class="mini-chip">Tank</div>
                 </div>
                 <div class="sensor-value big-value" id="waterLevelValue">—</div>
@@ -160,110 +158,109 @@
         </div>
     </div>
 
-
-    <div class="panel sensor-panel glow growth-monitoring-panel compact-individual-growth" style="margin-top:20px;">
-        <div class="growth-monitoring-heading compact-growth-heading">
+    <div class="panel sensor-panel glow water-history-panel">
+        <div class="water-history-heading">
             <div>
-                <span class="compact-section-eyebrow">SOLO CLASSIFICATION</span>
-                <h2>
-                    <i class="fa-solid fa-fish"></i>
-                    Individual Growth Monitoring
-                </h2>
-                <p>
-                    Latest standalone classification and recent growth history.
-                </p>
+                <h2><i class="fa-solid fa-clock-rotate-left"></i> Water Quality History</h2>
+                <p>Five most recent database records · Philippine time · updates every 5 seconds</p>
+            </div>
+            <span class="water-history-live"><i class="fa-solid fa-database"></i> Saved readings</span>
+        </div>
+        <div class="water-history-scroll">
+            <table class="water-history-table" aria-label="Recent saved water quality readings">
+                <thead><tr>
+                    <th>Time</th><th>pH </th>
+                    <th>Temp.</th><th>Turbidity</th><th>Water Level</th><th>Quality</th>
+                </tr></thead>
+                <tbody id="waterQualityHistoryRows">
+                    <tr><td colspan="6" class="water-history-empty">Loading saved readings...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="water-history-footnote">Only actual database records are displayed. Older records may have missing fields; these are shown as —. Current ESP32 pH values are simulated while the pH sensor is unavailable.</p>
+    </div>
+
+    <div class="panel sensor-panel glow growth-monitoring-panel" style="margin-top:20px;">
+        <div class="growth-monitoring-heading">
+            <div>
+                <h2><i class="fa-solid fa-fish"></i> Individual Growth Monitoring</h2>
+                <p>Standalone growth classifications that are not linked to batch tracking.</p>
             </div>
 
-            <div class="home-pdf-heading-actions"><a href="{{ url_for('download_report', type='individual') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Individual PDF</a><a href="{{ url_for('classify') }}" class="btn btn-primary compact-classify-btn">
-                <i class="fa-solid fa-camera"></i>
-                New Classification
-            </a></div>
+            <a href="{{ url_for('classify') }}" class="btn btn-primary">
+                <i class="fa-solid fa-camera"></i> New Classification
+            </a>
         </div>
 
         {% if latest_growth %}
-
-        <div class="compact-growth-layout">
-
-            <div class="compact-growth-summary-card">
-                <div class="compact-growth-stage">
-                    <span class="compact-label">Current Growth Stage</span>
-                    <strong>
-                        {{ latest_growth.growth.replace('_', ' ').title() }}
-                    </strong>
-                    <small>
-                        {{ '%.2f'|format(latest_growth.growth_confidence or 0) }}%
-                        model confidence
-                    </small>
+        <div class="sensor-cards sensor-cards-pretty growth-summary-grid">
+            <div class="sensor-card sensor-card-pretty growth-stage-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-seedling"></i> Current Growth Stage</div>
+                    <div class="mini-chip">Latest</div>
                 </div>
-
-                <div class="compact-growth-meta">
-                    <div>
-                        <span>Last Checked</span>
-                        <strong>
-                            {{ latest_growth.created_at.strftime('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
-                        </strong>
-                    </div>
-
-                    <div>
-                        <span>Time</span>
-                        <strong>
-                            {{ latest_growth.created_at.strftime('%I:%M %p') if latest_growth.created_at else '—' }}
-                        </strong>
-                    </div>
+                <div class="sensor-value big-value">
+                    {{ latest_growth.growth.replace('_', ' ').title() }}
                 </div>
+                <div class="sensor-sub strong-sub">Most recent model classification</div>
             </div>
 
-            <div class="compact-growth-chart">
-                <div class="compact-subhead">
-                    <span>Growth Stage Trend</span>
+            <div class="sensor-card sensor-card-pretty growth-confidence-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-gauge-high"></i> Growth Confidence</div>
+                    <div class="mini-chip">Model</div>
                 </div>
-
-                <canvas id="growthStageChart" height="92"></canvas>
+                <div class="sensor-value big-value">
+                    {{ '%.2f'|format(latest_growth.growth_confidence or 0) }}%
+                </div>
+                <div class="sensor-sub strong-sub">Prediction confidence</div>
             </div>
 
-            <div class="compact-growth-history">
-                <div class="compact-subhead">
-                    <span>Recent Updates</span>
+            <div class="sensor-card sensor-card-pretty growth-date-card">
+                <div class="sensor-topline">
+                    <div class="sensor-title"><i class="fa-solid fa-clock"></i> Last Checked</div>
+                    <div class="mini-chip">Saved</div>
                 </div>
-
-                <div class="compact-growth-history-list">
-                    {% for log in growth_logs[:4] %}
-                    <div class="compact-growth-history-item">
-                        <div>
-                            <strong>
-                                {{ log.growth.replace('_', ' ').title() }}
-                            </strong>
-                            <small>
-                                {{ '%.2f'|format(log.growth_confidence or 0) }}%
-                            </small>
-                        </div>
-
-                        <time>
-                            {{ log.created_at.strftime('%b %d') if log.created_at else '—' }}
-                        </time>
-                    </div>
-                    {% endfor %}
+                <div class="sensor-value growth-date-value">
+                    {{ latest_growth.created_at.strftime('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
+                </div>
+                <div class="sensor-sub strong-sub">
+                    {{ latest_growth.created_at.strftime('%I:%M %p') if latest_growth.created_at else '' }}
                 </div>
             </div>
+        </div>
 
+        <div class="growth-chart-wrap">
+            <canvas id="growthStageChart" height="115"></canvas>
         </div>
 
         <script id="growthChartLabelsData" type="application/json">{{ growth_chart_labels|tojson }}</script>
         <script id="growthChartValuesData" type="application/json">{{ growth_chart_values|tojson }}</script>
 
-        {% else %}
-
-        <div class="compact-growth-empty">
-            <i class="fa-solid fa-fish"></i>
-
-            <div>
-                <strong>No individual growth record yet</strong>
-                <span>
-                    Classify a standalone crayfish image to show its latest growth result here.
-                </span>
+        <div class="growth-history-wrap">
+            <h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Growth Updates</h3>
+            <div class="growth-history-list">
+                {% for log in growth_logs[:5] %}
+                <div class="growth-history-item">
+                    <div>
+                        <strong>{{ log.growth.replace('_', ' ').title() }}</strong>
+                        <span>{{ '%.2f'|format(log.growth_confidence or 0) }}% confidence</span>
+                    </div>
+                    <time>
+                        {{ log.created_at.strftime('%b %d, %Y %I:%M %p') if log.created_at else 'Unknown' }}
+                    </time>
+                </div>
+                {% endfor %}
             </div>
         </div>
-
+        {% else %}
+        <div class="growth-empty-state">
+            <i class="fa-solid fa-fish"></i>
+            <div>
+                <h3>No growth record yet</h3>
+                <p>Classify a crayfish image to display its growth stage and monitoring history here.</p>
+            </div>
+        </div>
         {% endif %}
     </div>
 
@@ -292,7 +289,6 @@
 
         </div>
 
-        <div class="home-pdf-batch"><a href="{{ url_for('download_report', type='growth') }}" class="home-pdf-btn"><i class="fa-solid fa-file-pdf"></i> Download Batch Growth PDF</a></div>
         {% if batch_growth_summaries %}
 
         <div class="live-growth-grid">
@@ -1522,6 +1518,65 @@ updateSensorConnection(phConnectionEl, phSensorStatus);
   initMiniChart();
   initGrowthChart();
   initBatchProjectionCharts();
+
+(function () {
+  const tbody = document.getElementById('waterQualityHistoryRows');
+  if (!tbody) return;
+  function display(value) {
+    return (value === null || value === undefined || value === '' || value === 'None') ? '—' : String(value);
+  }
+  function makeCell(value, className) {
+    const td = document.createElement('td');
+    td.textContent = display(value);
+    if (className) td.className = className;
+    return td;
+  }
+  function message(text) {
+    const tr = document.createElement('tr');
+    const td = makeCell(text, 'water-history-empty');
+    td.colSpan = 6;
+    tr.appendChild(td);
+    tbody.replaceChildren(tr);
+  }
+  async function refreshWaterQualityHistory() {
+    try {
+      const response = await fetch('/water-quality-history', {cache: 'no-store'});
+      if (!response.ok) throw new Error('History request failed');
+      const rows = await response.json();
+      if (!Array.isArray(rows)) throw new Error('Unexpected history response');
+      if (!rows.length) { message('No saved sensor readings found in the database yet.'); return; }
+      const fragment = document.createDocumentFragment();
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.appendChild(makeCell(row.time, 'water-history-time'));
+        const ph = makeCell(row.ph_level);
+        if (row.ph_source === 'simulated') {
+          const chip = document.createElement('span');
+          chip.className = 'water-history-demo';
+          chip.textContent = 'Demo';
+          ph.appendChild(chip);
+        }
+        tr.appendChild(ph);
+        tr.appendChild(makeCell(row.temperature));
+        tr.appendChild(makeCell(row.turbidity_ntu));
+        tr.appendChild(makeCell(row.water_level));
+        const quality = makeCell(row.water_quality);
+        const status = display(row.water_quality).toUpperCase();
+        if (['CLEAN', 'CLEAR', 'GOOD', 'NORMAL'].includes(status)) quality.classList.add('water-history-good');
+        else if (['DIRTY', 'POOR', 'CRITICAL', 'HIGH'].includes(status)) quality.classList.add('water-history-warning');
+        tr.appendChild(quality);
+        fragment.appendChild(tr);
+      });
+      tbody.replaceChildren(fragment);
+    } catch (error) {
+      if (!tbody.querySelector('tr') || tbody.textContent.includes('Loading saved readings')) {
+        message('Unable to load saved records. Check server/database connection.');
+      }
+    }
+  }
+  refreshWaterQualityHistory();
+  setInterval(refreshWaterQualityHistory, 5000);
+})();
 </script>
 
 <style>
@@ -2856,430 +2911,30 @@ updateSensorConnection(phConnectionEl, phSensorStatus);
   }
 
 
+/* CrayLife: Water Level + saved history refinements */
+.home-dashboard .water-level-strip { margin-top:14px; grid-template-columns:1fr; }
+.home-dashboard .water-level-strip .level-card { min-height:110px; padding:17px 22px; }
+.home-dashboard .water-level-strip .sensor-value { margin-top:8px; }
+.home-dashboard .water-history-panel { padding:22px; }
+.home-dashboard .water-history-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:17px; }
+.home-dashboard .water-history-heading h2 { margin:0 0 7px; }
+.home-dashboard .water-history-heading p { margin:0; opacity:.75; font-size:13px; }
+.home-dashboard .water-history-live { display:inline-flex; align-items:center; gap:8px; padding:7px 11px; border-radius:999px; border:1px solid rgba(82,190,160,.3); background:rgba(55,174,135,.10); color:#3c6b5b; font-size:12px; font-weight:700; white-space:nowrap; }
+.home-dashboard .water-history-scroll { overflow-x:auto; border-radius:14px; border:1px solid rgba(255,255,255,.13); }
+.home-dashboard .water-history-table { border-collapse:collapse; width:100%; min-width:650px; text-align:left; font-size:13px; }
+.home-dashboard .water-history-table thead { background:rgba(255,255,255,.085); }
+.home-dashboard .water-history-table th { padding:13px 15px; font-size:12px; font-weight:800; white-space:nowrap; border-bottom:1px solid rgba(255,255,255,255); }
+.home-dashboard .water-history-table td { padding:13px 15px; border-bottom:1px solid rgba(255,255,255,255); }
+.home-dashboard .water-history-table tbody tr:last-child td { border-bottom:0; }
+.home-dashboard .water-history-table tbody tr:hover { background:rgba(255,255,255,255); }
+.home-dashboard .water-history-time { font-weight:700; white-space:nowrap; }
+.home-dashboard .water-history-note { font-weight:400; opacity:.7; }
+.home-dashboard .water-history-demo { display:inline-block; margin-left:8px; font-size:10px; padding:3px 6px; border-radius:6px; background:rgba(255,190,80,.16); color:#f5c47c; font-weight:700; }
+.home-dashboard .water-history-good { color:#7fe0be; font-weight:800; }
+.home-dashboard .water-history-warning { color:#ffc078; font-weight:800; }
+.home-dashboard .water-history-empty { text-align:center; padding:28px 15px !important; opacity:.75; }
+.home-dashboard .water-history-footnote { font-size:12px; opacity:.7; margin:12px 0 0; line-height:1.6; }
 
-  /* =========================================================
-     HOME - BALANCED / EQUAL LAYOUT
-     ========================================================= */
-
-  .home-dashboard {
-    width: 100%;
-    max-width: 1320px;
-    margin: 0 auto;
-  }
-
-  .home-dashboard > .panel {
-    width: 100%;
-    margin: 0;
-    min-width: 0;
-  }
-
-  /* Water monitoring: 5 cards in a balanced grid */
-  .home-dashboard .water-monitoring-panel .sensor-cards-pretty {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 14px;
-    align-items: stretch;
-  }
-
-  .home-dashboard .water-monitoring-panel .sensor-card-pretty {
-    min-width: 0;
-    height: 100%;
-    min-height: 168px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .home-dashboard .water-monitoring-panel .sensor-card-pretty .individual-sensor-status {
-    margin-top: auto;
-  }
-
-  /* Individual growth summary: equal cards */
-  .home-dashboard .growth-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px;
-    align-items: stretch;
-  }
-
-  .home-dashboard .growth-summary-grid > .sensor-card-pretty {
-    height: 100%;
-    min-width: 0;
-  }
-
-  /* Batch cards: equal width + equal internal stat boxes */
-  .home-dashboard .weekly-growth-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .home-dashboard .weekly-batch-panel {
-    min-width: 0;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .home-dashboard .weekly-stat-box-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .home-dashboard .weekly-stat-box {
-    min-width: 0;
-    height: 100%;
-  }
-
-  .home-dashboard .weekly-detail-boxes {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .home-dashboard .weekly-batch-footer {
-    margin-top: auto;
-  }
-
-  /* Quick actions: distribute evenly */
-  .home-dashboard .quick-actions-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
-  }
-
-  .home-dashboard .quick-actions-grid .card-link,
-  .home-dashboard .quick-actions-grid .quick-card {
-    width: 100%;
-    min-width: 0;
-  }
-
-  /* Prevent text from clipping anywhere inside dashboard cards */
-  .home-dashboard h1,
-  .home-dashboard h2,
-  .home-dashboard h3,
-  .home-dashboard p,
-  .home-dashboard span,
-  .home-dashboard strong,
-  .home-dashboard time,
-  .home-dashboard .sensor-title,
-  .home-dashboard .sensor-sub,
-  .home-dashboard .big-value {
-    white-space: normal;
-    overflow-wrap: break-word;
-    word-break: normal;
-  }
-
-  @media (max-width: 1180px) {
-    .home-dashboard .water-monitoring-panel .sensor-cards-pretty {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .home-dashboard .weekly-stat-box-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .home-dashboard .quick-actions-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 900px) {
-    .home-dashboard .water-monitoring-panel .sensor-cards-pretty,
-    .home-dashboard .growth-summary-grid,
-    .home-dashboard .weekly-growth-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .home-dashboard .quick-actions-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 620px) {
-    .home-dashboard .water-monitoring-panel .sensor-cards-pretty,
-    .home-dashboard .growth-summary-grid,
-    .home-dashboard .weekly-growth-grid,
-    .home-dashboard .weekly-stat-box-grid,
-    .home-dashboard .weekly-detail-boxes,
-    .home-dashboard .quick-actions-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-
-
-  /* =========================================================
-     SMALL HOME POLISH
-     ========================================================= */
-
-  /* Keep long board status text like "Disconnected" inside card */
-  .home-dashboard .status-card .big-value {
-    font-size: 1.35rem;
-    line-height: 1.2;
-    letter-spacing: 0;
-    overflow-wrap: anywhere;
-  }
-
-  /* Quick Actions:
-     4 equal cards on the first row.
-     If the last row has only 3 cards, they expand evenly to fill it. */
-  .home-dashboard .quick-actions-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-  }
-
-  .home-dashboard .quick-actions-grid .card-link {
-    flex: 1 1 calc(25% - 14px);
-    min-width: 210px;
-    max-width: none;
-  }
-
-  .home-dashboard .quick-actions-grid .quick-card {
-    width: 100%;
-    height: 125px;
-    min-width: 0;
-    box-sizing: border-box;
-  }
-
-  @media (max-width: 1000px) {
-    .home-dashboard .quick-actions-grid .card-link {
-      flex-basis: calc(33.333% - 14px);
-      min-width: 190px;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .home-dashboard .quick-actions-grid .card-link {
-      flex-basis: calc(50% - 14px);
-      min-width: 160px;
-    }
-  }
-
-  @media (max-width: 430px) {
-    .home-dashboard .quick-actions-grid .card-link {
-      flex-basis: 100%;
-      min-width: 0;
-    }
-  }
-
-
-
-  /* =========================================================
-     INDIVIDUAL GROWTH - COMPACT ORGANIZED DESIGN
-     ========================================================= */
-
-  .home-dashboard .compact-individual-growth {
-    padding: 18px 20px;
-  }
-
-  .home-dashboard .compact-growth-heading {
-    margin-bottom: 14px;
-  }
-
-  .home-dashboard .compact-growth-heading h2 {
-    margin: 2px 0 3px;
-    font-size: 1.25rem;
-  }
-
-  .home-dashboard .compact-growth-heading p {
-    margin: 0;
-    font-size: 13px;
-    line-height: 1.45;
-    opacity: .72;
-  }
-
-  .home-dashboard .compact-section-eyebrow {
-    display: inline-block;
-    margin-bottom: 2px;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 1.1px;
-    opacity: .55;
-  }
-
-  .home-dashboard .compact-classify-btn {
-    min-height: 38px;
-    padding: 8px 13px;
-    font-size: 12px;
-  }
-
-  .home-dashboard .compact-growth-layout {
-    display: grid;
-    grid-template-columns:
-      minmax(210px, .85fr)
-      minmax(320px, 1.35fr)
-      minmax(220px, .9fr);
-    gap: 14px;
-    align-items: stretch;
-  }
-
-  .home-dashboard .compact-growth-summary-card,
-  .home-dashboard .compact-growth-chart,
-  .home-dashboard .compact-growth-history {
-    min-width: 0;
-    border-radius: 14px;
-    border: 1px solid rgba(15,127,122,.12);
-    background: rgba(15,127,122,.045);
-  }
-
-  .home-dashboard .compact-growth-summary-card {
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 14px;
-  }
-
-  .home-dashboard .compact-growth-stage {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .home-dashboard .compact-label,
-  .home-dashboard .compact-growth-meta span,
-  .home-dashboard .compact-subhead span {
-    font-size: 11px;
-    font-weight: 800;
-    opacity: .65;
-  }
-
-  .home-dashboard .compact-growth-stage strong {
-    font-size: 1.45rem;
-    line-height: 1.1;
-    color: #0f4d4c;
-  }
-
-  .home-dashboard .compact-growth-stage small {
-    font-size: 11px;
-    opacity: .68;
-  }
-
-  .home-dashboard .compact-growth-meta {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0,1fr));
-    gap: 8px;
-  }
-
-  .home-dashboard .compact-growth-meta > div {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 9px 10px;
-    border-radius: 10px;
-    background: rgba(255,255,255,.45);
-  }
-
-  .home-dashboard .compact-growth-meta strong {
-    font-size: 12px;
-  }
-
-  .home-dashboard .compact-growth-chart,
-  .home-dashboard .compact-growth-history {
-    padding: 12px 14px;
-  }
-
-  .home-dashboard .compact-subhead {
-    margin-bottom: 8px;
-  }
-
-  .home-dashboard .compact-growth-chart canvas {
-    width: 100% !important;
-    max-height: 125px;
-  }
-
-  .home-dashboard .compact-growth-history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .home-dashboard .compact-growth-history-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 9px;
-    border-radius: 9px;
-    background: rgba(255,255,255,.52);
-  }
-
-  .home-dashboard .compact-growth-history-item > div {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .home-dashboard .compact-growth-history-item strong {
-    font-size: 12px;
-    overflow-wrap: break-word;
-  }
-
-  .home-dashboard .compact-growth-history-item small,
-  .home-dashboard .compact-growth-history-item time {
-    font-size: 10px;
-    opacity: .65;
-  }
-
-  .home-dashboard .compact-growth-history-item time {
-    flex-shrink: 0;
-  }
-
-  .home-dashboard .compact-growth-empty {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px;
-    border-radius: 12px;
-    background: rgba(15,127,122,.05);
-  }
-
-  .home-dashboard .compact-growth-empty i {
-    font-size: 20px;
-    color: #0f7f7a;
-  }
-
-  .home-dashboard .compact-growth-empty div {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .home-dashboard .compact-growth-empty span {
-    font-size: 12px;
-    opacity: .72;
-  }
-
-  @media (max-width: 980px) {
-    .home-dashboard .compact-growth-layout {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .home-dashboard .compact-growth-summary-card {
-      grid-column: 1 / -1;
-    }
-  }
-
-  @media (max-width: 680px) {
-    .home-dashboard .compact-growth-layout {
-      grid-template-columns: 1fr;
-    }
-
-    .home-dashboard .compact-growth-summary-card {
-      grid-column: auto;
-    }
-  }
-
-  .home-pdf-btn {display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:11px;background:linear-gradient(135deg,#0f7f7a,#159f91);color:white!important;text-decoration:none!important;font-size:12px;font-weight:800;white-space:nowrap;}
-  .home-pdf-btn:hover {filter:brightness(1.08);}
-  .home-pdf-heading {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
-  .home-pdf-heading-actions {display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-  .home-pdf-batch {display:flex;justify-content:flex-end;margin:-6px 0 16px;}
-  @media(max-width:720px){.home-pdf-btn{white-space:normal}.home-pdf-batch{justify-content:flex-start}}
 </style>
 
 {% endblock %}
