@@ -1,0 +1,13 @@
+{
+    "pH Level": "9.09",
+    "pH Voltage": "1.3528",
+    "Water Level": "LOW",
+    "Water Quality": "CLEAN",
+    "Turbidity NTU": "0.0",
+    "Turbidity Voltage": "0.383",
+    "Turbidity ADC": "\u2014",
+    "Temperature": "34.5",
+    "Temperature Status": "HOT",
+    "Temperature Sensor Status": "Connected",
+    "Status": "Connected"
+}

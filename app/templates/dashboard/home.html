@@ -23,10 +23,23 @@
             </p>
         </div>
 
-        <div class="dashboard-hero-badge">
-            <i class="fa-solid fa-circle-dot"></i>
-            Live Monitoring
-        </div>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+
+    {% if session.get('user_id') %}
+    <a href="/download-report?type=all"
+       class="action-btn action-btn-secondary"
+       style="text-decoration:none; white-space:nowrap;">
+        <i class="fa-solid fa-file-pdf"></i>
+        Export Complete Report
+    </a>
+    {% endif %}
+
+    <div class="dashboard-hero-badge">
+        <i class="fa-solid fa-circle-dot"></i>
+        Live Monitoring
+    </div>
+
+</div>
     </div>
 
     <div class="panel sensor-panel glow">
@@ -218,19 +231,6 @@
                 <div class="sensor-sub strong-sub">Prediction confidence</div>
             </div>
 
-            <div class="sensor-card sensor-card-pretty growth-date-card">
-                <div class="sensor-topline">
-                    <div class="sensor-title"><i class="fa-solid fa-clock"></i> Last Checked</div>
-                    <div class="mini-chip">Saved</div>
-                </div>
-                <div class="sensor-value growth-date-value">
-                    {{ latest_growth.created_at.strftime('%b %d, %Y') if latest_growth.created_at else 'Unknown' }}
-                </div>
-                <div class="sensor-sub strong-sub">
-                    {{ latest_growth.created_at.strftime('%I:%M %p') if latest_growth.created_at else '' }}
-                </div>
-            </div>
-        </div>
 
         <div class="growth-chart-wrap">
             <canvas id="growthStageChart" height="115"></canvas>
@@ -1129,19 +1129,34 @@ let phChart = null;
   }
 
   function applySensorData(data) {
-    const validPayload = hasValidSensorData(data);
+    const backendConnected =
+  String(data?.Status ?? "").trim().toLowerCase() === "connected";
 
-    if (validPayload) {
-      registerValidPayload(data);
-    }
+const validPayload =
+  backendConnected && hasValidSensorData(data);
 
-    const boardConnected = isBoardConnected();
+if (validPayload) {
+  registerValidPayload(data);
+}
+
+    const boardConnected =
+  String(data?.Status || "").trim().toLowerCase() === "connected";
 
     // While still inside the grace period, keep showing the last good values
     // instead of letting one empty/transient payload blank the dashboard.
     const displayData = boardConnected
-      ? mergeWithLastGoodData(data)
-      : (data || {});
+  ? mergeWithLastGoodData(data)
+  : {
+      "Status": "Disconnected",
+      "pH Level": null,
+      "pH Status": "Disconnected",
+      "Water Level": null,
+      "Water Status": "Disconnected",
+      "Water Quality": null,
+      "Turbidity NTU": null,
+      "Temperature": null,
+      "Temperature Status": "UNKNOWN"
+    };
 
     updateConnectionUI(boardConnected);
     updateLastUpdatedUI();
