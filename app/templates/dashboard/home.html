@@ -249,7 +249,7 @@
                         <span>{{ '%.2f'|format(log.growth_confidence or 0) }}% confidence</span>
                     </div>
                     <time>
-                        {{ log.created_at.strftime('%b %d, %Y %I:%M %p') if log.created_at else 'Unknown' }}
+                        {{ log.created_at|ph_time if log.created_at else 'Unknown' }}
                     </time>
                 </div>
                 {% endfor %}

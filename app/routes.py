@@ -90,9 +90,14 @@ def _normalize_datetime(value):
 def _days_between(start_dt, end_dt):
     start_dt = _normalize_datetime(start_dt)
     end_dt = _normalize_datetime(end_dt)
+
     if not start_dt or not end_dt:
         return None
-    return max(0, (end_dt.date() - start_dt.date()).days)
+
+    start_date = to_ph_time(start_dt).date()
+    end_date = to_ph_time(end_dt).date()
+
+    return max(0, (end_date - start_date).days)
 
 
 def _get_official_growth_references(observations):
