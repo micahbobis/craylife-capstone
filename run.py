@@ -1,15 +1,17 @@
-
 import os
 import time
 import traceback
 from datetime import datetime
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app import app, socketio, db
 from app.utils import get_arduino_data
 from app.db_save import save_monitoring_if_needed
 from app.models import MonitoringRecord
 
-print("DB URI:", app.config.get("SQLALCHEMY_DATABASE_URI"))
 
 # A JSON file older than this is treated as stale/disconnected.
 STALE_AFTER_SECONDS = 15
@@ -228,16 +230,17 @@ def sensor_broadcast_loop():
         socketio.sleep(5)
 
 
+
 if __name__ == "__main__":
     socketio.start_background_task(sensor_broadcast_loop)
 
     port = int(os.environ.get("PORT", 5000))
 
-socketio.run(
-    app,
-    host="0.0.0.0",
-    port=port,
-    debug=False,
-    use_reloader=False,
-    allow_unsafe_werkzeug=True,
-)
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )

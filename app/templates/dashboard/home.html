@@ -187,9 +187,11 @@
                 <p>Standalone growth classifications that are not linked to batch tracking.</p>
             </div>
 
+            {% if session.get('user_id') %}
             <a href="{{ url_for('classify') }}" class="btn btn-primary">
                 <i class="fa-solid fa-camera"></i> New Classification
             </a>
+            {% endif %}
         </div>
 
         {% if latest_growth %}
@@ -498,13 +500,15 @@
                         </span>
                     </div>
 
-                    <a
-                        href="{{ url_for('batch_detail', batch_id=item.batch_id) }}"
-                        class="live-growth-history-btn"
-                    >
-                        <i class="fa-solid fa-folder-open"></i>
-                        View Batch History
-                    </a>
+                    {% if session.get('user_id') %}
+                      <a
+                          href="{{ url_for('batch_detail', batch_id=item.batch_id) }}"
+                          class="live-growth-history-btn"
+                      >
+                          <i class="fa-solid fa-folder-open"></i>
+                          View Batch History
+                      </a>
+                      {% endif %}
                 </div>
 
             </article>
@@ -529,6 +533,105 @@
 
     </div>
 
+ <div class="panel glow public-growth-panel">
+
+    <h2>
+        <i class="fa-solid fa-chart-column"></i>
+        Crayfish Growth Overview
+    </h2>
+
+    <p>
+        Overall growth-stage statistics based on recorded
+        crayfish classifications.
+    </p>
+
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    ">
+
+        <div class="card" style="padding: 20px; text-align: center;">
+            <h3>Total Classifications</h3>
+            <div style="font-size: 30px; font-weight: 700;">
+                {{ public_growth_summary.total_classifications }}
+            </div>
+        </div>
+
+        <div class="card" style="padding: 20px; text-align: center;">
+            <h3>Growth Stages Recorded</h3>
+            <div style="font-size: 30px; font-weight: 700;">
+                {{ public_growth_summary.stage_labels | length }}
+            </div>
+        </div>
+
+    </div>
+
+    <h3 style="margin-top: 25px;">Growth Stage Distribution</h3>
+
+    <div style="max-width: 650px; margin: 20px auto;">
+        <canvas id="publicGrowthChart"></canvas>
+    </div>
+
+</div>
+
+<script id="publicGrowthLabels" type="application/json">{{ public_growth_summary.stage_labels | tojson }}</script>
+<script id="publicGrowthCounts" type="application/json">{{ public_growth_summary.stage_counts | tojson }}</script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    const chartCanvas = document.getElementById("publicGrowthChart");
+
+    if (!chartCanvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const labels = JSON.parse(
+        document.getElementById("publicGrowthLabels").textContent
+    );
+
+    const counts = JSON.parse(
+        document.getElementById("publicGrowthCounts").textContent
+    );
+
+    if (labels.length === 0) {
+        return;
+    }
+
+    new Chart(chartCanvas, {
+        type: "bar",
+        data: {
+            labels: labels,
+            datasets: [{
+                label: "Classifications",
+                data: counts,
+                backgroundColor: "#28a745",
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+
+});
+</script>
+  
+    {% if session.get('user_id') %}
     <div class="panel quick-actions-panel glow">
         <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
 
@@ -585,6 +688,17 @@
     </div>
 
 </div>
+
+{% else %}
+<div class="panel quick-actions-panel glow" style="text-align:center;">
+    <h2>Administrator Access</h2>
+    <p>Log in to manage batches, classify crayfish, and access reports.</p>
+    <a href="{{ url_for('login') }}" class="btn btn-primary">
+        <i class="fa-solid fa-right-to-bracket"></i>
+        Login as Admin
+    </a>
+</div>
+{% endif %}
 
 <div id="toast" style="
   position: fixed;

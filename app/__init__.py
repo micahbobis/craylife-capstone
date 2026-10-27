@@ -6,8 +6,15 @@ from itsdangerous import URLSafeTimedSerializer
 from flask_socketio import SocketIO
 
 app = Flask(__name__)
-app.config.from_object('config.Config')
 
+import os
+
+if os.environ.get("FLASK_ENV") == "production":
+    app.config.from_object("config.ProductionConfig")
+else:
+    app.config.from_object("config.DevelopmentConfig")
+    
+    
 db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
 mail = Mail(app)

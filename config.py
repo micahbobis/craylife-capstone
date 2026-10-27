@@ -1,3 +1,4 @@
+
 import os
 
 
@@ -9,17 +10,20 @@ class Config:
             "DATABASE_URL is not configured. "
             "Set it to the Aiven MySQL connection string before starting Craylife."
         )
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    SECRET_KEY = os.environ.get(
-        "SECRET_KEY",
-        "dev-secret-key-change-in-production"
-    )
+    SECRET_KEY = os.environ.get("SECRET_KEY")
+
+    if not SECRET_KEY:
+        raise RuntimeError(
+            "SECRET_KEY is not configured."
+        )
 
     SESSION_COOKIE_SECURE = False
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
-    PERMANENT_SESSION_LIFETIME = 3600
+    PERMANENT_SESSION_LIFETIME = 7200
 
     # EMAIL CONFIGURATION
     MAIL_SERVER = "smtp.gmail.com"
@@ -27,9 +31,8 @@ class Config:
     MAIL_USE_TLS = True
     MAIL_USE_SSL = False
 
-    MAIL_USERNAME = "micahavrill14@gmail.com"
-    MAIL_PASSWORD = "qdjz ivsg kexp hwun"
-
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = MAIL_USERNAME
 
 

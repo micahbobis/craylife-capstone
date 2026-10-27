@@ -10,13 +10,12 @@ import os
 import uuid
 import io
 from datetime import datetime, timedelta, timezone
-import tensorflow as tf
+
 import traceback
 import json
 import shutil
 import numpy as np
 from PIL import Image
-from tensorflow.keras.models import load_model
 from werkzeug.utils import secure_filename
 from app.utils import get_arduino_data
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -24,6 +23,8 @@ from flask import jsonify
 from flask_socketio import join_room
 from app.db_save import save_classification_log
 from pillow_heif import register_heif_opener
+from flask import abort
+from ai_edge_litert.interpreter import Interpreter
 
 register_heif_opener()
 from app.batch_average_growth_service import (
@@ -1604,6 +1605,56 @@ def home():
     growth_chart_labels = []
     growth_chart_values = []
     batch_growth_summaries = []
+    
+    # Public growth monitoring summary
+# Aggregated information only, no individual batch details.
+    public_growth_summary = {
+        "total_classifications": 0,
+        "average_length_cm": None,
+        "stage_labels": [],
+        "stage_counts": []
+    }
+    
+        # Public aggregated growth statistics
+    # No batch names, user IDs, or individual records are returned.
+    try:
+        from sqlalchemy import func
+
+        public_growth_rows = (
+            db.session.query(
+                ClassificationLog.growth,
+                func.count(ClassificationLog.id),
+                func.avg(ClassificationLog.estimated_length_cm)
+            )
+            .filter(ClassificationLog.growth.isnot(None))
+            .group_by(ClassificationLog.growth)
+            .all()
+        )
+
+        total_classifications = 0
+        total_length_sum = 0.0
+        total_length_count = 0
+
+        stage_labels = []
+        stage_counts = []
+
+        for stage, count, average_length in public_growth_rows:
+            stage_labels.append(
+                str(stage).replace("_", " ").title()
+            )
+            stage_counts.append(int(count))
+
+            total_classifications += int(count)
+
+        public_growth_summary = {
+            "total_classifications": total_classifications,
+            "average_length_cm": None,
+            "stage_labels": stage_labels,
+            "stage_counts": stage_counts
+        }
+
+    except Exception:
+        app.logger.exception("Unable to load public growth summary")
 
     if user_id:
         # -----------------------------------------------------
@@ -1921,7 +1972,8 @@ def home():
         growth_logs=growth_logs,
         growth_chart_labels=growth_chart_labels,
         growth_chart_values=growth_chart_values,
-        batch_growth_summaries=batch_growth_summaries
+        batch_growth_summaries=batch_growth_summaries,
+        public_growth_summary=public_growth_summary
     )
     
     
@@ -1936,7 +1988,13 @@ def password_reset():
 
         if user:
 
-            token = serializer.dumps(user.email, salt="password-reset")
+            token = serializer.dumps(
+                {
+                    "email": user.email,
+                    "password_hash": user.password
+                },
+                salt="password-reset"
+            )
 
             reset_url = url_for(
                 "reset_password_token",
@@ -1946,7 +2004,7 @@ def password_reset():
 
             msg = Message(
                 subject="Reset your Craylife password",
-                recipients=["micahavrill14@gmail.com"],
+                recipients=[user.email],
                 body=f"""
 Hello {user.username},
 
@@ -2576,6 +2634,7 @@ def login():
 
             if user and user.check_password(form.password.data):
                 session.clear()
+                session.permanent = True
                 session['user_id'] = user.id
                 session['username'] = user.username
                 session['user_email'] = user.email
@@ -2613,18 +2672,17 @@ def login():
         form=form
     )
 
+@app.route('/logout', methods=['POST'])
+@login_required
+def logout():
+    session.clear()
+    flash('You have been logged out successfully.', 'success')
+    return redirect(url_for('login'))
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data)
-        user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.commit()
-        flash('Registration successful! You can now log in.', 'success')
-        return redirect(url_for('login'))
-    return render_template('auth/register.html', form=form)
+    abort(404)
 
 
 @app.route('/dashboard')
@@ -3226,17 +3284,9 @@ GENDER_LABELS = ["Female", "Male"]
 
 MODEL_DIR = os.path.join(app.root_path, "models")
 
-GENDER_MODEL_PATH = os.path.join(MODEL_DIR, "crayfish_gender_resnet50.h5")
-GROWTH_MODEL_PATH = os.path.join(MODEL_DIR, "crayfish_growth_resnet50.h5")
 
-print("=== MODEL DEBUG START ===")
-print("MODEL_DIR:", MODEL_DIR)
-print("FILES:", os.listdir(MODEL_DIR) if os.path.exists(MODEL_DIR) else "NO DIR")
-print("GENDER_MODEL_PATH:", GENDER_MODEL_PATH)
-print("GROWTH_MODEL_PATH:", GROWTH_MODEL_PATH)
-print("Gender exists:", os.path.exists(GENDER_MODEL_PATH))
-print("Growth exists:", os.path.exists(GROWTH_MODEL_PATH))
-print("=== MODEL DEBUG END ===")
+
+
 
 
 # =========================================================
@@ -3260,71 +3310,78 @@ def classify_crayfish(img_bytes):
         img_array = preprocess_image_from_bytes(img_bytes)
 
         # =========================================
-        # GENDER MODEL - LOAD, PREDICT, RELEASE
+        # GENDER MODEL - TFLITE
         # =========================================
-        print("[MODEL] Loading gender model...", flush=True)
+        print("[MODEL] Loading gender TFLite model...", flush=True)
 
-        gender_model = load_model(
-            GENDER_MODEL_PATH,
-            compile=False
+        gender_interpreter = Interpreter(
+            model_path="app/models/crayfish_gender_test.tflite",
+            num_threads=1
         )
 
-        gender_prediction = gender_model.predict(
-            img_array,
-            verbose=0
+        gender_interpreter.allocate_tensors()
+
+        gender_input = gender_interpreter.get_input_details()
+        gender_output = gender_interpreter.get_output_details()
+
+        gender_interpreter.set_tensor(
+            gender_input[0]["index"],
+            img_array.astype(np.float32)
         )
 
-        gender_raw_value = float(
-            gender_prediction[0][0]
+        gender_interpreter.invoke()
+
+        gender_prediction = gender_interpreter.get_tensor(
+            gender_output[0]["index"]
         )
+
+        gender_raw_value = float(gender_prediction[0][0])
 
         if gender_raw_value > 0.5:
             gender_label = "Male"
-            gender_confidence = (
-                gender_raw_value * 100.0
-            )
+            gender_confidence = gender_raw_value * 100.0
         else:
             gender_label = "Female"
-            gender_confidence = (
-                (1.0 - gender_raw_value) * 100.0
-            )
+            gender_confidence = (1.0 - gender_raw_value) * 100.0
 
-        del gender_model
-        tf.keras.backend.clear_session()
+        del gender_interpreter
 
-        print("[MODEL] Gender model released", flush=True)
-
+        print("[MODEL] Gender prediction complete", flush=True)
 
         # =========================================
-        # GROWTH MODEL - LOAD, PREDICT, RELEASE
+        # GROWTH MODEL - TFLITE
         # =========================================
-        print("[MODEL] Loading growth model...", flush=True)
+        print("[MODEL] Loading growth TFLite model...", flush=True)
 
-        growth_model = load_model(
-            GROWTH_MODEL_PATH,
-            compile=False
+        growth_interpreter = Interpreter(
+            model_path="app/models/crayfish_growth_test.tflite",
+            num_threads=1
         )
 
-        growth_prediction = growth_model.predict(
-            img_array,
-            verbose=0
+        growth_interpreter.allocate_tensors()
+
+        growth_input = growth_interpreter.get_input_details()
+        growth_output = growth_interpreter.get_output_details()
+
+        growth_interpreter.set_tensor(
+            growth_input[0]["index"],
+            img_array.astype(np.float32)
+        )
+
+        growth_interpreter.invoke()
+
+        growth_prediction = growth_interpreter.get_tensor(
+            growth_output[0]["index"]
         )
 
         growth_class_index = int(
             np.argmax(growth_prediction[0])
         )
 
-        growth_label = GROWTH_LABELS[
-            growth_class_index
-        ]
+        growth_label = GROWTH_LABELS[growth_class_index]
 
         growth_confidence = (
-            float(
-                growth_prediction[0][
-                    growth_class_index
-                ]
-            )
-            * 100.0
+            float(growth_prediction[0][growth_class_index]) * 100.0
         )
 
         growth_raw_probs = [
@@ -3332,76 +3389,42 @@ def classify_crayfish(img_bytes):
             for x in growth_prediction[0].tolist()
         ]
 
-        del growth_model
-        tf.keras.backend.clear_session()
+        del growth_interpreter
 
-        print("[MODEL] Growth model released", flush=True)
-
+        print("[MODEL] Growth prediction complete", flush=True)
 
         # =========================================
         # LENGTH / STAGE ESTIMATE
         # =========================================
-        extra_growth = (
-            estimate_length_and_growth_stage(
-                img_bytes
-            )
-        )
-
+        extra_growth = estimate_length_and_growth_stage(img_bytes)
 
         return {
             "gender": gender_label,
-
-            "gender_confidence": round(
-                gender_confidence,
-                2
-            ),
-
-            "gender_raw_value": round(
-                gender_raw_value,
-                6
-            ),
+            "gender_confidence": round(gender_confidence, 2),
+            "gender_raw_value": round(gender_raw_value, 6),
 
             "growth": growth_label,
+            "growth_confidence": round(growth_confidence, 2),
+            "growth_raw_probs": growth_raw_probs,
 
-            "growth_confidence": round(
-                growth_confidence,
-                2
+            "estimated_length_cm": extra_growth.get(
+                "estimated_length_cm", "Unknown"
             ),
 
-            "growth_raw_probs": (
-                growth_raw_probs
+            "estimated_growth_stage": extra_growth.get(
+                "growth_stage", "Unknown"
             ),
 
-            "estimated_length_cm": (
-                extra_growth.get(
-                    "estimated_length_cm",
-                    "Unknown"
-                )
-            ),
-
-            "estimated_growth_stage": (
-                extra_growth.get(
-                    "growth_stage",
-                    "Unknown"
-                )
-            ),
-
-            "growth_debug": (
-                extra_growth.get(
-                    "debug",
-                    ""
-                )
+            "growth_debug": extra_growth.get(
+                "debug", ""
             )
         }
 
     except Exception as error:
         traceback.print_exc()
 
-        tf.keras.backend.clear_session()
-
         return {
-            "error":
-                f"Classification failed: {str(error)}"
+            "error": f"Classification failed: {str(error)}"
         }
 
 # =========================================================
@@ -4242,6 +4265,7 @@ def verify_email_change(token):
     return redirect(url_for("settings"))
 
 @app.route("/test-email")
+@login_required
 def test_email():
 
     msg = Message(
@@ -4258,16 +4282,50 @@ def test_email():
 def reset_password_token(token):
 
     try:
-        email = serializer.loads(token, salt="password-reset", max_age=3600)
-    except:
-        flash("Reset link expired.", "danger")
+        token_data = serializer.loads(
+            token,
+            salt="password-reset",
+            max_age=3600
+        )
+    except Exception:
+        flash("Invalid or expired reset link.", "danger")
+        return redirect(url_for("password_reset"))
+
+    if not isinstance(token_data, dict):
+        flash("Invalid reset link.", "danger")
+        return redirect(url_for("password_reset"))
+
+    email = token_data.get("email")
+    original_password_hash = token_data.get("password_hash")
+
+    if not email or not original_password_hash:
+        flash("Invalid reset link.", "danger")
         return redirect(url_for("password_reset"))
 
     user = User.query.filter_by(email=email).first()
 
+    if not user:
+        flash("Invalid reset link.", "danger")
+        return redirect(url_for("password_reset"))
+
+    # Reject reset links issued before the last password change.
+    if user.password != original_password_hash:
+        flash(
+            "This reset link has already been used or is no longer valid.",
+            "danger"
+        )
+        return redirect(url_for("password_reset"))
+
     if request.method == "POST":
 
-        new_password = request.form.get("password")
+        new_password = request.form.get("password", "")
+
+        if len(new_password) < 8:
+            flash(
+                "Password must be at least 8 characters long.",
+                "danger"
+            )
+            return render_template("auth/reset_password.html")
 
         user.set_password(new_password)
         db.session.commit()

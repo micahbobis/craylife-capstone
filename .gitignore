@@ -16,3 +16,13 @@ app/static/uploads/*
 !app/static/uploads/.gitkeep
 
 app/utils copy.py
+# AI conversion and testing folders
+app/models/gender_savedmodel_test/
+app/models/growth_savedmodel_test/
+litert_linux_check/
+
+# Local backup files
+requirements_backup.txt
+
+# Old AI models
+app/models/*.h5

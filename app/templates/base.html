@@ -591,50 +591,77 @@
                 <!-- NAV -->
                 <nav class="site-nav">
 
-                    <ul class="site-nav-links">
+<ul class="site-nav-links">
 
-                        <li>
+    <!-- HOME: Available to everyone -->
+    <li>
+        <a
+            href="{{ url_for('home') }}"
+            class="site-nav-link {% if request.endpoint in ['home', 'dashboard'] %}active{% endif %}"
+        >
+            <i class="fa-solid fa-house"></i>
+            Home
+        </a>
+    </li>
 
-                            <a
-                                href="{{ url_for('home') }}"
-                                class="
-                                    site-nav-link
-                                    {% if request.endpoint in ['home', 'dashboard'] %}
-                                        active
-                                    {% endif %}
-                                "
-                            >
+    {% if session.get('user_id') %}
 
-                                <i class="fa-solid fa-house"></i>
+        <!-- SETTINGS: Admin only -->
+        <li>
+            <a
+                href="{{ url_for('settings') }}"
+                class="site-nav-link {% if request.endpoint == 'settings' %}active{% endif %}"
+            >
+                <i class="fa-solid fa-gear"></i>
+                Settings
+            </a>
+        </li>
 
-                                Home
+        <!-- LOGOUT: Admin only -->
+        <li>
+            <form
+                method="POST"
+                action="{{ url_for('logout') }}"
+                style="margin: 0;"
+            >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
 
-                            </a>
+                <button
+                    type="submit"
+                    class="site-nav-link"
+                    style="
+                        background: transparent;
+                        border: none;
+                        cursor: pointer;
+                        font: inherit;
+                    "
+                >
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    Logout
+                </button>
+            </form>
+        </li>
 
-                        </li>
+    {% else %}
 
+        <!-- LOGIN: Visitors only -->
+        <li>
+            <a
+                href="{{ url_for('login') }}"
+                class="site-nav-link {% if request.endpoint == 'login' %}active{% endif %}"
+            >
+                <i class="fa-solid fa-right-to-bracket"></i>
+                Login
+            </a>
+        </li>
 
-                        <li>
+    {% endif %}
 
-                            <a
-                                href="{{ url_for('settings') }}"
-                                class="
-                                    site-nav-link
-                                    {% if request.endpoint == 'settings' %}
-                                        active
-                                    {% endif %}
-                                "
-                            >
-
-                                <i class="fa-solid fa-gear"></i>
-
-                                Settings
-
-                            </a>
-
-                        </li>
-
-                    </ul>
+</ul>
 
                 </nav>
 
